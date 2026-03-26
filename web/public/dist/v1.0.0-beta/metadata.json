@@ -1,0 +1,8 @@
+{
+  "version": "v1.0.0-beta",
+  "sourceCommit": "2108d227845645aa6a2c8722172adbfff6541bb8",
+  "runId": "22519631933",
+  "runNumber": "5",
+  "updatedAt": "2026-02-28T11:15:23Z",
+  "assets": ["otpilot-mac", "otpilot-linux", "otpilot.exe", "otpilot.cmd"]
+}

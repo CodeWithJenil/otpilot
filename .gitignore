@@ -1,0 +1,64 @@
+# --- OTPilot Security ---
+# Critical: Never commit user credentials or OAuth tokens
+creds.json
+credentials.json
+token.json
+.otpilot/
+.env
+.env.local
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# --- Environments ---
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# --- Web (Vite/React) ---
+web/node_modules/
+web/dist/
+web/dist-ssr/
+web/*.local
+web/.env
+web/.env.*
+web/.vercel/
+web/.next/
+
+# --- IDEs & OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.DS_Store?
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Icon?

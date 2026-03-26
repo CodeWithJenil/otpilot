@@ -1,0 +1,196 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 240 6% 4%;
+    --foreground: 60 5% 90%;
+
+    --card: 240 4% 8%;
+    --card-foreground: 60 5% 90%;
+
+    --popover: 240 4% 8%;
+    --popover-foreground: 60 5% 90%;
+
+    --primary: 152 100% 50%;
+    --primary-foreground: 240 6% 4%;
+
+    --secondary: 240 4% 12%;
+    --secondary-foreground: 60 5% 90%;
+
+    --muted: 240 3% 18%;
+    --muted-foreground: 240 3% 55%;
+
+    --accent: 152 100% 50%;
+    --accent-foreground: 240 6% 4%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 60 5% 90%;
+
+    --border: 240 3% 18%;
+    --input: 240 3% 18%;
+    --ring: 152 100% 50%;
+
+    --radius: 0.5rem;
+
+    --sidebar-background: 240 6% 4%;
+    --sidebar-foreground: 60 5% 90%;
+    --sidebar-primary: 152 100% 50%;
+    --sidebar-primary-foreground: 240 6% 4%;
+    --sidebar-accent: 240 4% 12%;
+    --sidebar-accent-foreground: 60 5% 90%;
+    --sidebar-border: 240 3% 18%;
+    --sidebar-ring: 152 100% 50%;
+  }
+
+  .dark {
+    --background: 240 6% 4%;
+    --foreground: 60 5% 90%;
+    --card: 240 4% 8%;
+    --card-foreground: 60 5% 90%;
+    --popover: 240 4% 8%;
+    --popover-foreground: 60 5% 90%;
+    --primary: 152 100% 50%;
+    --primary-foreground: 240 6% 4%;
+    --secondary: 240 4% 12%;
+    --secondary-foreground: 60 5% 90%;
+    --muted: 240 3% 18%;
+    --muted-foreground: 240 3% 55%;
+    --accent: 152 100% 50%;
+    --accent-foreground: 240 6% 4%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 60 5% 90%;
+    --border: 240 3% 18%;
+    --input: 240 3% 18%;
+    --ring: 152 100% 50%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-body antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-mono;
+  }
+}
+
+/* Grain overlay */
+.grain-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 128px 128px;
+}
+
+/* CRT glow behind hero */
+.hero-glow {
+  position: absolute;
+  top: -20%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 120%;
+  height: 100%;
+  background: radial-gradient(ellipse at center, hsl(152 100% 50% / 0.06) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+/* Terminal scanlines */
+.scanlines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    hsl(0 0% 0% / 0.08) 2px,
+    hsl(0 0% 0% / 0.08) 4px
+  );
+  border-radius: inherit;
+}
+
+/* Blinking cursor */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.cursor-blink {
+  animation: blink 1s step-end infinite;
+}
+
+/* Custom cursor */
+.custom-cursor {
+  position: fixed;
+  z-index: 99999;
+  pointer-events: none;
+  font-family: 'JetBrains Mono', monospace;
+  color: hsl(152 100% 50%);
+  font-size: 20px;
+  line-height: 1;
+  animation: blink 1s step-end infinite;
+  text-shadow: 0 0 8px hsl(152 100% 50% / 0.6);
+}
+
+/* Scroll reveal */
+.reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.7s ease-out, transform 0.7s ease-out;
+}
+
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Hero stagger animations */
+@keyframes hero-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.hero-animate {
+  animation: hero-fade-up 0.8s ease-out both;
+}
+
+.hero-animate-delay-1 { animation-delay: 0.1s; }
+.hero-animate-delay-2 { animation-delay: 0.25s; }
+.hero-animate-delay-3 { animation-delay: 0.4s; }
+.hero-animate-delay-4 { animation-delay: 0.55s; }
+.hero-animate-delay-5 { animation-delay: 0.7s; }
+
+/* Tab underline */
+.tab-underline {
+  transition: left 0.3s ease, width 0.3s ease;
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .hero-animate,
+  .reveal,
+  .cursor-blink,
+  .custom-cursor {
+    animation: none !important;
+    transition: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}

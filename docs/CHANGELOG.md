@@ -1,0 +1,56 @@
+# Changelog
+
+All notable changes to OTPilot will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+---
+
+## [2.0.0] — 2026-03-26
+
+### Added
+- **User-Provided Credentials**: Migrated from bundled OAuth credentials to user-provided `credentials.json` for enhanced privacy and project isolation.
+- **`otpilot hotkey` Command**: New standalone CLI command to view and reconfigure the global hotkey interactively or via `--set`.
+- **Improved macOS Notifications**: Switched to native `osascript` (AppleScript) for macOS notifications to eliminate the heavy `pyobjus` dependency and improve reliability.
+- **Enhanced Setup Wizard**: New step-by-step credential import process with validation and helpful troubleshooting guides.
+
+### Changed
+- **Setup Flow**: The setup wizard now guides users through creating a Google Cloud project as the first mandatory step.
+- **Version Lifecycle**: Major version bump to 2.0.0 marking the transition to a production-ready, decentralised authentication model.
+
+### Fixed
+- **Accessibility Issues**: Improved feedback for macOS accessibility permissions.
+- **Dependency Bloat**: Reduced installation size and complexity by removing strict requirements for OS-specific helper libraries.
+
+---
+
+## [0.1.0] — 2024-01-01
+
+### Added
+
+- **Core functionality**: Fetch OTPs from Gmail on hotkey trigger and copy to clipboard
+- **Gmail API integration**: OAuth2 authentication with `gmail.readonly` scope
+- **OTP extraction engine**: Regex-based extraction supporting 4–8 digit codes with context-word matching
+- **Global hotkey listener**: Configurable keyboard shortcuts via `pynput`
+- **System tray icon**: Background operation with `pystray` — includes Settings, Re-authenticate, and Quit menu items
+- **Desktop notifications**: Native OS notifications via `plyer` showing masked OTP on copy
+- **Interactive setup wizard**: Rich-styled terminal wizard for first-run configuration
+- **CLI interface**: `otpilot setup`, `otpilot start`, `otpilot status`, `otpilot version` commands via `click`
+- **Configuration management**: JSON-based config at `~/.otpilot/config.json`
+- **Cross-platform support**: macOS, Windows, and Linux
+- **Privacy-first design**: Read-only Gmail access, local-only token storage, on-demand fetching (no polling)
+
+### Security
+
+- OAuth tokens stored locally at `~/.otpilot/token.json`
+- OTP digits partially masked in notification display
+- No data sent to third-party servers
+- Gmail API scope limited to read-only access
+
+### Documentation
+
+- Full README with installation, quickstart, and troubleshooting
+- Step-by-step user flow guide (`USER_FLOW.md`)
+- Detailed OAuth setup guide for custom credentials (`SETUP.md`)
+- Contributing guide with code standards and PR process (`CONTRIBUTING.md`)

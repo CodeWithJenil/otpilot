@@ -1,0 +1,4 @@
+c9e9144a9e4183019ce417038da587600daceafb4fc2efac672e7cb17a9def1d  web/public/dist/v1.0.0-beta/otpilot-mac
+8071817fcb962ca4063c9fd676d6b5b391105cd2e2e83f208080a47ceb461013  web/public/dist/v1.0.0-beta/otpilot-linux
+9131efb72d1b7ebec07e5bd0087ba959c4891cadaef789e8991e6c5568952a5c  web/public/dist/v1.0.0-beta/otpilot.exe
+7fae5ae98bc5d383240505533336b11bb072ff23522e0bb0e66c2dac1636714f  web/public/dist/v1.0.0-beta/otpilot.cmd
