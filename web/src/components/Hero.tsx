@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import LogoMark from "./LogoMark";
-import TerminalWindow from "./TerminalWindow";
+import HeroDemoPanel from "./HeroDemoPanel";
 
 const Hero = () => {
   return (
@@ -56,7 +56,7 @@ const Hero = () => {
 
           {/* Terminal side */}
           <div className="hero-animate hero-animate-delay-4 flex justify-center lg:justify-end">
-            <TerminalWindow />
+            <HeroDemoPanel />
           </div>
         </div>
       </div>
