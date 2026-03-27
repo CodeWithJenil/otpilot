@@ -1,3 +1,14 @@
+![OTPilot Demo](assets/demo.gif)
+
+# OTPilot
+
+> Press a hotkey. Your OTP is already copied.
+```bash
+pip install otpilot
+```
+
+---
+
 <p align="center">
   <strong>✈ OTPilot v2.0</strong>
 </p>
@@ -40,21 +51,6 @@ pip install otpilot
 > sudo apt install xclip  # Debian/Ubuntu
 > ```
 
-## Getting Your credentials.json
-
-Before using OTPilot, you need to download a `credentials.json` file from Google Cloud Console. This is a one-time, ~5 minute process.
-
-1. Go to [console.cloud.google.com](https://console.cloud.google.com)
-2. Create a new project (or use an existing one)
-3. Enable the **Gmail API**
-4. Go to **APIs & Services → Credentials**
-5. Create an **OAuth 2.0 Client ID** (Application type: **Desktop app**)
-6. Click **Download JSON** to save the `credentials.json` file
-
-> **Your credentials never leave your machine.** The file is stored locally at `~/.otpilot/credentials.json`.
-
-For detailed, step-by-step instructions with screenshots, see [**SETUP.md**](SETUP.md).
-
 ## Quickstart
 
 ### 1. Get Your Credentials
@@ -86,6 +82,21 @@ OTPilot runs in the background with a system tray icon. Press your hotkey whenev
 1. Receive an OTP email in Gmail
 2. Press your hotkey (default: `Ctrl+Shift+O`)
 3. Paste the OTP — done!
+
+## Getting Your credentials.json
+
+Before using OTPilot, you need to download a `credentials.json` file from Google Cloud Console. This is a one-time, ~5 minute process.
+
+1. Go to [console.cloud.google.com](https://console.cloud.google.com)
+2. Create a new project (or use an existing one)
+3. Enable the **Gmail API**
+4. Go to **APIs & Services → Credentials**
+5. Create an **OAuth 2.0 Client ID** (Application type: **Desktop app**)
+6. Click **Download JSON** to save the `credentials.json` file
+
+> **Your credentials never leave your machine.** The file is stored locally at `~/.otpilot/credentials.json`.
+
+For detailed, step-by-step instructions with screenshots, see [**SETUP.md**](SETUP.md).
 
 ## CLI Commands
 

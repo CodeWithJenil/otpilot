@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "otpilot"
-version = "2.0.0"
-description = "Background desktop utility that copies OTPs from Gmail to clipboard on hotkey trigger."
+dynamic = ["version"]
+description = "Background CLI utility that copies OTPs from Gmail to clipboard on hotkey trigger"
 readme = "docs/README.md"
-license = {text = "MIT"}
+license = {file = "LICENSE"}
 requires-python = ">=3.8"
 authors = [
-    {name = "OTPilot Contributors"},
+    {name = "Jenil", email = "mail2jenil.pokar19@gmail.com"},
 ]
 keywords = ["otp", "gmail", "clipboard", "hotkey", "automation", "2fa"]
 classifiers = [
@@ -40,14 +40,24 @@ dependencies = [
     "rich>=13.0.0",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "build",
+    "twine",
+]
+
 [project.urls]
-Homepage = "https://github.com/otpilot/otpilot"
-Documentation = "https://github.com/otpilot/otpilot/tree/main/docs"
-Repository = "https://github.com/otpilot/otpilot"
-Issues = "https://github.com/otpilot/otpilot/issues"
+Homepage = "https://github.com/CodeWithJenil/otpilot"
+Documentation = "https://github.com/CodeWithJenil/otpilot/tree/main/docs"
+Repository = "https://github.com/CodeWithJenil/otpilot"
+Issues = "https://github.com/CodeWithJenil/otpilot/issues"
 
 [project.scripts]
 otpilot = "otpilot.main:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "otpilot.__version__"}
 
 [tool.setuptools.packages.find]
 include = ["otpilot*"]
