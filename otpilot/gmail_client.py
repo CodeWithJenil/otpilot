@@ -5,11 +5,21 @@ Emails are fetched on-demand only — never polled in the background.
 """
 
 import base64
+import json
+import os
 import re
+import threading
+import socket
+import time
+import uuid
+import webbrowser
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any, Dict, List, Optional
+from urllib.parse import parse_qs, urlparse
 
+import requests
 from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -18,6 +28,10 @@ from googleapiclient.discovery import build
 
 from otpilot.config import TOKEN_FILE, get_config
 from otpilot.credentials import CREDENTIALS_FILE, SCOPES, credentials_exist, validate_credentials_file
+
+# Default proxy server URL for Quick Setup
+DEFAULT_PROXY_URL = "https://jenil-otpilot.vercel.app"
+OTPILOT_PROXY_URL = os.getenv("OTPILOT_PROXY_URL", DEFAULT_PROXY_URL)
 
 
 class NotAuthenticatedError(Exception):
@@ -52,17 +66,17 @@ def _load_credentials() -> Credentials:
         NotAuthenticatedError: If no token file exists.
         GmailAuthError: If the token cannot be refreshed.
     """
-    if not credentials_exist():
-        raise CredentialsNotFoundError()
-
-    if not validate_credentials_file(CREDENTIALS_FILE):
-        raise CredentialsNotFoundError(
-            "Invalid credentials file. Re-run `otpilot setup` with a valid credentials.json."
-        )
-
     if not TOKEN_FILE.exists():
+        if not credentials_exist():
+            raise CredentialsNotFoundError()
+        if not validate_credentials_file(CREDENTIALS_FILE):
+            raise CredentialsNotFoundError(
+                "Invalid credentials file. Re-run `otpilot setup` with a valid credentials.json."
+            )
         raise NotAuthenticatedError()
 
+    # Load from token file. Note: Proxy-generated tokens contain client info
+    # so they can be refreshed without a local credentials.json.
     creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
 
     if creds.expired and creds.refresh_token:
@@ -71,6 +85,8 @@ def _load_credentials() -> Credentials:
             # Persist the refreshed token
             TOKEN_FILE.write_text(creds.to_json(), encoding="utf-8")
         except RefreshError as exc:
+            # If refresh fails and we don't have local credentials.json, 
+            # we need to re-authenticate via proxy or manual setup.
             raise GmailAuthError(
                 "Token expired and could not be refreshed. Run `otpilot setup` to re-authenticate."
             ) from exc
@@ -110,6 +126,102 @@ def run_oauth_flow() -> Credentials:
 
     TOKEN_FILE.write_text(creds.to_json(), encoding="utf-8")
     return creds
+
+
+def run_proxy_oauth_flow(proxy_url: str = OTPILOT_PROXY_URL) -> Credentials:
+    """Run the non-interactive OAuth2 flow using a hosted proxy server.
+
+    Starts a local HTTP server on port 9876, opens the browser to the
+    proxy's auth start page, and waits for the token via redirect.
+
+    Args:
+        proxy_url: URL of the hosted OAuth proxy server.
+
+    Returns:
+        Authenticated ``Credentials`` instance.
+
+    Raises:
+        GmailAuthError: If authentication fails or times out.
+    """
+    code_container: List[str] = []
+
+    def find_free_port(start=9876, end=9999) -> int:
+        for port in range(start, end):
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                try:
+                    s.bind(("127.0.0.1", port))
+                    return port
+                except OSError:
+                    continue
+        raise RuntimeError("No free port available between 9876-9999")
+
+    class TokenHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            # Parse token from query parameter
+            query = parse_qs(urlparse(self.path).query)
+            one_time_code = query.get("code", [None])[0]
+
+            if one_time_code:
+                code_container.append(one_time_code)
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.end_headers()
+                self.wfile.write(
+                    b"<h1>Success!</h1><p>OTPilot is now authenticated. You can close this window.</p>"
+                )
+            else:
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(b"No token received. Authentication failed.")
+
+        def log_message(self, format, *args):
+            # Suppress logging for cleaner terminal
+            return
+
+    # Start local server on a free port between 9876-9999
+    local_port = find_free_port()
+    try:
+        server = HTTPServer(("localhost", local_port), TokenHandler)
+    except OSError as exc:
+        raise GmailAuthError(f"Could not start local server on port {local_port}: {exc}")
+
+    # Use a daemon thread for the server
+    server_thread = threading.Thread(target=server.serve_forever)
+    server_thread.daemon = True
+    server_thread.start()
+
+    try:
+        # Construct auth start URL with local redirect
+        auth_url = f"{proxy_url.rstrip('/')}/api/auth/start?redirect=http://localhost:{local_port}"
+        webbrowser.open(auth_url)
+
+        # Wait for token (timeout after 2 minutes)
+        start_time = time.time()
+        while not code_container and time.time() - start_time < 120:
+            time.sleep(1)
+
+        if code_container:
+            one_time_code = code_container[0]
+            token_url = f"{proxy_url.rstrip('/')}/api/auth/token?code={one_time_code}"
+            response = requests.get(token_url, timeout=10)
+            response.raise_for_status()
+            token_json = response.text
+
+            # Save the token
+            from otpilot.config import CONFIG_DIR
+            CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+            TOKEN_FILE.write_text(token_json, encoding="utf-8")
+
+            # Verify and return credentials
+            creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
+            return creds
+        else:
+            print("Authentication timed out. Please try again.")
+            raise GmailAuthError("Authentication timed out. Please try again.")
+
+    finally:
+        server.shutdown()
+        server.server_close()
 
 
 def _decode_body(payload: Dict[str, Any]) -> str:

@@ -1,0 +1,6 @@
+{
+  "installCommand": "npm install --prefix web",
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/$1" }
+  ]
+}

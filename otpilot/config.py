@@ -19,6 +19,13 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "notify_on_copy": True,
     "otp_max_age_minutes": 10,
     "email_fetch_count": 10,
+    "auto_paste": False,
+    "auto_start_on_boot": False,
+    "notification_sound": False,
+    "mask_otp_in_notification": True,
+    "check_updates_on_start": True,
+    "theme": "default",
+    "setup_complete": False,
 }
 
 

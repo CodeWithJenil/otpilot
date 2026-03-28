@@ -3,7 +3,29 @@
 All notable changes to OTPilot will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.html).
+
+---
+
+## [2.1.0] — 2026-03-28
+
+### Added
+- **Auto-paste**: OTPilot can now directly paste the OTP instead of just copying it. Configurable during setup.
+- **Expanded setup wizard**: First-time setup now configures all preferences in one go:
+- Auto-paste toggle
+- Desktop notification preferences
+- OTP masking in notifications
+- Email scan count (1–50)
+- OTP max age in minutes (1–60)
+- Automatic update checks on startup
+- Auto-start on boot (launchd on macOS, registry on Windows, systemd on Linux)
+- **`otpilot update` command**: Checks PyPI for the latest version and offers to upgrade in one step.
+- **Background update check**: On startup, silently checks for updates and shows a desktop notification if a newer version is available (configurable, on by default).
+- **GitHub Discussions link**: Shown at the end of first-time setup only, pointing users to the feedback channel.
+
+### Changed
+- **config.json**: Added new fields — auto_paste, auto_start_on_boot, notification_sound, mask_otp_in_notification, check_updates_on_start, setup_complete. All default to safe values and are backwards compatible.
+- **Setup wizard**: Now writes config once at the very end instead of incrementally. Cleaner and more reliable.
 
 ---
 

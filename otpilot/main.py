@@ -6,11 +6,14 @@ clipboard, and shows a desktop notification.
 """
 
 import signal
+import subprocess
 import sys
 import threading
+import time
 from typing import Optional
 
 import click
+import requests
 from rich.console import Console
 
 from otpilot import __version__
@@ -28,6 +31,49 @@ console = Console()
 # Global references for cleanup
 _listener: Optional[HotkeyListener] = None
 _tray: Optional[TrayApp] = None
+
+
+def _fetch_latest_version() -> Optional[str]:
+    """Fetch the latest OTPilot version from PyPI."""
+    try:
+        response = requests.get("https://pypi.org/pypi/otpilot/json", timeout=5)
+        response.raise_for_status()
+        payload = response.json()
+    except Exception:
+        return None
+
+    return payload.get("info", {}).get("version")
+
+
+def _is_update_available(current: str, latest: str) -> bool:
+    """Compare current vs latest version strings."""
+    try:
+        from packaging.version import Version
+
+        return Version(latest) > Version(current)
+    except Exception:
+        def _version_tuple(value: str) -> tuple:
+            parts = []
+            for piece in value.replace("-", ".").split("."):
+                if piece.isdigit():
+                    parts.append(int(piece))
+                else:
+                    digits = "".join(ch for ch in piece if ch.isdigit())
+                    if digits:
+                        parts.append(int(digits))
+            return tuple(parts)
+
+        return _version_tuple(latest) > _version_tuple(current)
+
+
+def _check_for_update() -> Optional[str]:
+    """Return latest version string if an update is available."""
+    latest = _fetch_latest_version()
+    if not latest:
+        return None
+    if _is_update_available(__version__, latest):
+        return latest
+    return None
 
 
 def _on_hotkey_triggered() -> None:
@@ -65,12 +111,25 @@ def _on_hotkey_triggered() -> None:
         return
 
     config = get_config()
+    if config.get("auto_paste", False):
+        try:
+            from pynput import keyboard
+
+            time.sleep(0.1)
+            controller = keyboard.Controller()
+            modifier = keyboard.Key.cmd if sys.platform == "darwin" else keyboard.Key.ctrl
+            with controller.pressed(modifier):
+                controller.press("v")
+                controller.release("v")
+        except Exception:
+            # Fall back silently to clipboard copy
+            pass
+
     if config.get("notify_on_copy", True):
         # Mask middle digits for privacy in notification
-        if len(otp) > 4:
+        masked = otp
+        if config.get("mask_otp_in_notification", True) and len(otp) > 4:
             masked = otp[:2] + "•" * (len(otp) - 4) + otp[-2:]
-        else:
-            masked = otp
         notify("OTPilot", f"OTP copied: {masked}")
 
 
@@ -103,6 +162,14 @@ def run() -> None:
 
     config = get_config()
     hotkey_str = config.get("hotkey", "ctrl+shift+o")
+
+    if config.get("check_updates_on_start", True):
+        def _background_update_check() -> None:
+            latest = _check_for_update()
+            if latest:
+                notify("OTPilot", f"OTPilot update available: v{latest}. Run: otpilot update")
+
+        threading.Thread(target=_background_update_check, daemon=True).start()
 
     # Set up signal handlers for clean exit
     def _signal_handler(sig: int, frame: object) -> None:
@@ -223,6 +290,33 @@ def hotkey(hotkey_value: str) -> None:
 def version() -> None:
     """Print the OTPilot version."""
     click.echo(f"OTPilot v{__version__}")
+
+
+@cli.command()
+def update() -> None:
+    """Check for and install OTPilot updates."""
+    latest = _fetch_latest_version()
+    if latest is None:
+        click.echo("Could not check for updates. Please try again later.")
+        return
+
+    if not _is_update_available(__version__, latest):
+        click.echo(f"OTPilot is up to date (v{__version__})")
+        return
+
+    click.echo(f"Update available: v{__version__} → v{latest}")
+    click.echo("Run: pip install --upgrade otpilot")
+
+    if not click.confirm("Update now?", default=True):
+        return
+
+    result = subprocess.run(
+        [sys.executable, "-m", "pip", "install", "--upgrade", "otpilot"]
+    )
+    if result.returncode == 0:
+        click.echo("Updated successfully. Restart OTPilot.")
+    else:
+        click.echo("Update failed. Please run: pip install --upgrade otpilot")
 
 
 def main() -> None:
