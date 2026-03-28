@@ -1,4 +1,4 @@
-import { pruneExpiredTokens, tokenStore } from "../store";
+import { pruneExpiredTokens, tokenStore } from "../store.js";
 
 export default function handler(req: any, res: any): void {
   if (req.method && req.method !== "GET") {

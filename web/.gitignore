@@ -26,3 +26,5 @@ dist-ssr
 # Keep published binaries (served as static assets)
 !public/dist/
 !public/dist/**
+.vercel
+.env*.local

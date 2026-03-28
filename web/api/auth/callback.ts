@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import { nanoid } from "nanoid";
-import { pruneExpiredTokens, tokenStore } from "../store";
+import { pruneExpiredTokens, tokenStore } from "../store.js";
 
 function getEnv(name: string): string | null {
   const value = process.env[name];
