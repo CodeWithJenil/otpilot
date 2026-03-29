@@ -20,7 +20,12 @@ from otpilot import __version__
 from otpilot.clipboard import ClipboardError, copy_to_clipboard
 from otpilot.config import config_exists, get_config, token_exists
 from otpilot.gmail_client import GmailAuthError, NotAuthenticatedError, fetch_recent_emails
-from otpilot.hotkey_listener import HotkeyListener
+try:
+    from otpilot.hotkey_listener import HotkeyListener
+    _HOTKEY_LISTENER_AVAILABLE = True
+except Exception:
+    HotkeyListener = None  # type: ignore[assignment]
+    _HOTKEY_LISTENER_AVAILABLE = False
 from otpilot.notifier import notify
 from otpilot.otp_extractor import extract_otp
 from otpilot.tray import TrayApp
@@ -29,7 +34,7 @@ from otpilot.tray import TrayApp
 console = Console()
 
 # Global references for cleanup
-_listener: Optional[HotkeyListener] = None
+_listener: Optional[object] = None
 _tray: Optional[TrayApp] = None
 
 
@@ -175,11 +180,18 @@ def run() -> None:
     signal.signal(signal.SIGINT, _signal_handler)
     signal.signal(signal.SIGTERM, _signal_handler)
 
-    # Start hotkey listener in background thread
-    _listener = HotkeyListener(hotkey_str, _on_hotkey_triggered)
-    _listener.start()
-
-    notify("OTPilot", f"Running! Press {hotkey_str} to fetch OTP.")
+    # Start hotkey listener in background thread (if available)
+    if _HOTKEY_LISTENER_AVAILABLE and HotkeyListener is not None:
+        try:
+            _listener = HotkeyListener(hotkey_str, _on_hotkey_triggered)
+            _listener.start()
+            notify("OTPilot", f"Running! Press {hotkey_str} to fetch OTP.")
+        except Exception:
+            console.print("[yellow]Hotkey listener unavailable on this platform[/yellow]")
+            notify("OTPilot", "Running without hotkey support.")
+    else:
+        console.print("[yellow]Hotkey listener unavailable on this platform[/yellow]")
+        notify("OTPilot", "Running without hotkey support.")
 
     # Start tray in main thread (blocks until quit)
     _tray = TrayApp(on_quit=_cleanup)
