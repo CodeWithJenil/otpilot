@@ -35,7 +35,7 @@ pip install -r requirements.txt
 
 ```bash
 otpilot version
-# → OTPilot v0.1.0
+# -> OTPilot v2.1.0
 ```
 
 ---
@@ -45,16 +45,16 @@ otpilot version
 ```
 otpilot/
 ├── __init__.py           # Package version and metadata
-├── main.py               # CLI entry point and hotkey callback
-├── setup_wizard.py       # Interactive first-run setup
-├── gmail_client.py       # Gmail API OAuth2 + email fetching
+├── main.py               # CLI entry point and runtime orchestration
+├── setup_wizard.py       # Interactive setup and preferences
+├── gmail_client.py       # Supabase OAuth flow + Gmail fetching
 ├── otp_extractor.py      # Regex-based OTP extraction
-├── hotkey_listener.py    # Global hotkey listener (pynput)
+├── hotkey_listener.py    # Global hotkey listener/capture (pynput)
 ├── tray.py               # System tray icon + menu (pystray)
-├── notifier.py           # Desktop notifications (plyer)
+├── notifier.py           # Desktop notifications
 ├── clipboard.py          # Clipboard operations (pyperclip)
 ├── config.py             # Configuration management
-└── credentials.py        # OAuth2 credential paths and validation
+└── token_store.py        # Keyring-first token persistence
 ```
 
 ---
@@ -72,7 +72,7 @@ def fetch_recent_emails(n: Optional[int] = None) -> List[Dict[str, Any]]:
 
 ### Docstrings
 
-All public functions must have Google-style docstrings:
+All public functions should have Google-style docstrings:
 
 ```python
 def copy_to_clipboard(text: str) -> None:
@@ -89,9 +89,9 @@ def copy_to_clipboard(text: str) -> None:
 ### Error Handling
 
 - Never let exceptions crash the application silently
-- Runtime errors → desktop notification
-- Setup errors → rich console output
-- No bare `print()` statements in production code
+- Runtime errors -> desktop notification
+- Setup errors -> rich console output
+- No bare `print()` statements in production code unless intentional for CLI UX
 
 ### Imports
 
@@ -145,7 +145,7 @@ git checkout -b feature/your-feature-name
 
 - Follow the code standards above
 - Add tests for new functionality
-- Update documentation if needed
+- Update documentation when behavior changes
 
 ### 3. Test Your Changes
 
@@ -182,16 +182,15 @@ Then open a Pull Request on GitHub with:
 ### Good First Issues
 
 - Add more OTP context keywords to `otp_extractor.py`
-- Improve error messages
-- Add support for more terminal emulators on Linux
+- Improve setup validation and error messages
+- Add tests for update check and token-store fallbacks
 
 ### Feature Ideas
 
 - Support for multiple Gmail accounts
 - Custom OTP extraction patterns (user-defined regex)
-- Auto-start on system boot
 - OTP history (last N extracted OTPs)
-- Sound notification option
+- Sound notification option wiring
 
 ### Bug Reports
 

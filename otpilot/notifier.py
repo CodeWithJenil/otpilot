@@ -1,11 +1,11 @@
-"""Desktop notifications for OTPilot.
+"""Desktop notification delivery for OTPilot.
 
-Uses native OS notification mechanisms with graceful fallbacks:
-- macOS: ``osascript`` (AppleScript)
-- Windows / Linux: ``plyer``
+This module provides best-effort desktop notifications across macOS,
+Windows, and Linux. In OTPilot, it surfaces user-visible runtime events such
+as copied OTPs, auth issues, and update availability.
 
-Failures are silently ignored so the main application flow is never
-interrupted.
+Key exports:
+    notify: Cross-platform notification entry point.
 """
 
 import subprocess
@@ -13,13 +13,17 @@ import sys
 
 
 def _notify_macos(title: str, message: str) -> None:
-    """Send a notification on macOS using osascript (AppleScript).
+    """Send a macOS notification using ``osascript``.
 
     Args:
-        title: The notification title.
-        message: The notification body text.
+        title (str): Notification title.
+        message (str): Notification body text.
+
+    Returns:
+        None: This helper does not return a value.
     """
     script = f'display notification "{message}" with title "{title}"'
+    # Run AppleScript in a detached process so notification calls are non-blocking.
     subprocess.Popen(
         ["osascript", "-e", script],
         stdout=subprocess.DEVNULL,
@@ -28,11 +32,14 @@ def _notify_macos(title: str, message: str) -> None:
 
 
 def _notify_plyer(title: str, message: str) -> None:
-    """Send a notification using plyer (Windows/Linux fallback).
+    """Send a desktop notification via ``plyer``.
 
     Args:
-        title: The notification title.
-        message: The notification body text.
+        title (str): Notification title.
+        message (str): Notification body text.
+
+    Returns:
+        None: This helper does not return a value.
     """
     from plyer import notification as plyer_notification
 
@@ -45,14 +52,17 @@ def _notify_plyer(title: str, message: str) -> None:
 
 
 def notify(title: str, message: str) -> None:
-    """Show a desktop notification.
-
-    Automatically selects the best notification backend for the
-    current platform.
+    """Display a desktop notification using platform-appropriate backend.
 
     Args:
-        title: The notification title.
-        message: The notification body text.
+        title (str): Notification title.
+        message (str): Notification body text.
+
+    Returns:
+        None: This function does not return a value.
+
+    Raises:
+        None: Backend failures are intentionally swallowed as best-effort.
     """
     try:
         if sys.platform == "darwin":
@@ -60,5 +70,5 @@ def notify(title: str, message: str) -> None:
         else:
             _notify_plyer(title, message)
     except Exception:
-        # Silent fail — notifications are best-effort
+        # Notifications are non-critical; never let failures break main flow.
         pass

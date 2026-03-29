@@ -1,6 +1,15 @@
 """Configuration management for OTPilot.
 
-Handles reading and writing of ~/.otpilot/config.json.
+This module reads and writes persistent OTPilot settings from
+``~/.otpilot/config.json`` and defines default values used during first-run
+setup. It is the central configuration layer used by setup, runtime service,
+and UI commands.
+
+Key exports:
+    get_config: Load effective config with defaults merged in.
+    save_config: Persist config values to disk.
+    get_value: Read one config value with an optional fallback.
+    set_value: Update one config value and save immediately.
 """
 
 import json
@@ -8,12 +17,12 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 
-# Default configuration directory and file paths
+# Default configuration directory and file paths.
 CONFIG_DIR: Path = Path.home() / ".otpilot"
 CONFIG_FILE: Path = CONFIG_DIR / "config.json"
 TOKEN_FILE: Path = CONFIG_DIR / "token.json"
 
-# Default configuration values
+# Default configuration values used for first run and missing keys.
 DEFAULT_CONFIG: Dict[str, Any] = {
     "hotkey": "ctrl+shift+o",
     "notify_on_copy": True,
@@ -30,17 +39,23 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 
 
 def _ensure_config_dir() -> None:
-    """Create the configuration directory if it doesn't exist."""
+    """Create the configuration directory when it is missing."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def get_config() -> Dict[str, Any]:
-    """Load and return the current configuration.
+    """Load OTPilot configuration and merge it with defaults.
 
-    If the config file doesn't exist, creates it with default values.
+    If the config file does not exist or cannot be decoded, this function
+    recreates it from ``DEFAULT_CONFIG``.
 
     Returns:
-        Dictionary containing all configuration values.
+        Dict[str, Any]: Effective configuration dictionary with all default
+            keys present.
+
+    Raises:
+        OSError: If reading or writing the config file fails unexpectedly.
+        TypeError: If a value cannot be serialized while rewriting defaults.
     """
     _ensure_config_dir()
 
@@ -52,21 +67,28 @@ def get_config() -> Dict[str, Any]:
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
             stored_config: Dict[str, Any] = json.load(f)
     except (json.JSONDecodeError, OSError):
-        # If config is corrupted, reset to defaults
+        # Reset to known-safe defaults when stored JSON is corrupted.
         save_config(DEFAULT_CONFIG)
         return DEFAULT_CONFIG.copy()
 
-    # Merge with defaults so new keys are always present
+    # Merge stored values onto defaults so newly introduced keys exist.
     merged = DEFAULT_CONFIG.copy()
     merged.update(stored_config)
     return merged
 
 
 def save_config(data: Dict[str, Any]) -> None:
-    """Save configuration data to disk.
+    """Persist configuration data to disk.
 
     Args:
-        data: Dictionary of configuration values to persist.
+        data (Dict[str, Any]): Configuration values to save.
+
+    Returns:
+        None: This function does not return a value.
+
+    Raises:
+        OSError: If the config file cannot be written.
+        TypeError: If ``data`` contains non-JSON-serializable values.
     """
     _ensure_config_dir()
 
@@ -75,44 +97,69 @@ def save_config(data: Dict[str, Any]) -> None:
 
 
 def config_exists() -> bool:
-    """Check whether a configuration file already exists.
+    """Check whether ``config.json`` exists.
 
     Returns:
-        True if config.json is present, False otherwise.
+        bool: ``True`` when the config file exists, otherwise ``False``.
+
+    Raises:
+        None: This function does not raise application-level exceptions.
     """
     return CONFIG_FILE.exists()
 
 
 def token_exists() -> bool:
-    """Check whether an OAuth token is already stored (keyring or file)."""
+    """Check whether an OAuth token is already stored.
+
+    The function prefers ``otpilot.token_store`` and falls back to checking the
+    legacy token file path when token storage backends are unavailable.
+
+    Returns:
+        bool: ``True`` if a token is available, otherwise ``False``.
+
+    Raises:
+        None: Exceptions are handled internally to support graceful fallback.
+    """
     try:
         from otpilot.token_store import token_exists as stored_token_exists
 
         return stored_token_exists()
     except Exception:
+        # Fall back to legacy file presence checks when token store import fails.
         return TOKEN_FILE.exists()
 
 
 def get_value(key: str, default: Optional[Any] = None) -> Any:
-    """Retrieve a single configuration value.
+    """Get a single configuration value.
 
     Args:
-        key: The config key to look up.
-        default: Fallback value if the key is missing.
+        key (str): Configuration key to read.
+        default (Optional[Any]): Fallback value when the key is missing.
 
     Returns:
-        The configuration value, or *default* if not found.
+        Any: The stored value for ``key`` or ``default`` when not present.
+
+    Raises:
+        OSError: If loading configuration from disk fails unexpectedly.
+        TypeError: If defaults must be rewritten and serialization fails.
     """
     config = get_config()
     return config.get(key, default)
 
 
 def set_value(key: str, value: Any) -> None:
-    """Update a single configuration value and persist to disk.
+    """Set and persist a single configuration value.
 
     Args:
-        key: The config key to update.
-        value: The new value.
+        key (str): Configuration key to update.
+        value (Any): New value to assign.
+
+    Returns:
+        None: This function does not return a value.
+
+    Raises:
+        OSError: If the config file cannot be read or written.
+        TypeError: If ``value`` is not JSON serializable.
     """
     config = get_config()
     config[key] = value

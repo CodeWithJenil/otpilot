@@ -1,14 +1,14 @@
 # Privacy Policy
 
-**Project:** otpilot  
+**Project:** OTPilot  
 **Scope:** Personal use  
-**Last updated:** February 2026
+**Last updated:** March 29, 2026
 
 ---
 
 ## Overview
 
-`otpilot` is a personal-use CLI tool. It does not collect, transmit, or store any data on external servers. All data stays on your local machine.
+`otpilot` is a local CLI utility. It does not operate a telemetry backend and does not upload email content to OTPilot-owned servers.
 
 ---
 
@@ -16,58 +16,61 @@
 
 | Data | Purpose | Stored? | Sent Externally? |
 |---|---|---|---|
-| Gmail emails | Search for OTP codes | No | No |
-| OAuth access token | Authenticate Gmail API requests | Yes (local only) | No |
-| OAuth refresh token | Renew access token silently | Yes (local only) | No |
-| OTP code | Copy to clipboard | No | No |
+| Gmail emails (recent inbox messages) | Search for OTP codes | No | Yes, only to Google Gmail API requests made by your client |
+| OAuth access token | Authenticate Gmail API requests | Yes (local only) | Yes, to Google during API calls |
+| OAuth refresh token | Renew access silently | Yes (local only) | Yes, to Google token endpoints as part of OAuth |
+| OTP code | Copy to clipboard / optional auto-paste | No | No |
 
 ---
 
 ## What Is NOT Collected
 
-- Email content is never written to disk
-- No analytics, telemetry, or crash reporting
-- No personal information is logged
-- No data is sent to any third-party service other than Google's Gmail API
+- OTPilot does not persist email bodies locally for analytics
+- No built-in telemetry, analytics, or crash reporting
+- No OTPilot-controlled data warehouse for user mail data
 
 ---
 
-## Google OAuth2
+## Google OAuth Scope
 
-`otpilot` uses Google OAuth2 with a single scope:
+`otpilot` uses Google OAuth with:
 
 ```
 https://www.googleapis.com/auth/gmail.readonly
 ```
 
-This grants read-only access to your Gmail. The tool only searches for recent OTP emails — it never reads unrelated emails, sends emails, or modifies your mailbox.
-
-OAuth tokens are stored locally in your OS config directory:
-
-| OS | Token location |
-|---|---|
-| Linux | `~/.config/otpilot/` |
-| macOS | `~/Library/Application Support/otpilot/` |
-| Windows | `%APPDATA%\otpilot\` |
-
-You can delete tokens at any time by running `otpilot logout` or manually deleting the config directory.
+This grants read-only Gmail access. OTPilot cannot send, delete, or modify your emails.
 
 ---
 
-## Third-Party Services
+## Local Storage
 
-The only external service contacted is the **Google Gmail API** (`gmail.googleapis.com`). This is governed by [Google's Privacy Policy](https://policies.google.com/privacy).
+OTPilot stores runtime state locally at:
 
-No other network requests are made.
+- `~/.otpilot/config.json`
+- Token storage: system keyring when available (`service=otpilot`), with fallback to `~/.otpilot/token.json`
+
+You can remove local state by deleting these files and revoking Google access.
+
+---
+
+## Network Calls
+
+OTPilot may contact:
+
+- Google Gmail API (email listing and message retrieval)
+- Google OAuth/token services (through OAuth flow)
+- Supabase-backed auth endpoint for setup/re-auth (`/api/auth/start`, `/api/auth/session`)
+- PyPI (`pypi.org`) when update checks are enabled
 
 ---
 
 ## Revoking Access
 
-To fully revoke `otpilot`'s access to your Gmail:
+To revoke Gmail access:
 
 1. Go to [myaccount.google.com/permissions](https://myaccount.google.com/permissions)
-2. Find `otpilot` (or your app name from the consent screen)
+2. Find your OTPilot OAuth app
 3. Click **Remove Access**
 
-Then run `otpilot logout` to clear local tokens.
+Then delete local token/config files if needed.

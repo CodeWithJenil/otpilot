@@ -1,4 +1,13 @@
-"""Interactive first-run setup wizard for OTPilot."""
+"""Interactive setup workflow for OTPilot.
+
+This module implements OTPilot's first-run and reconfiguration wizard,
+including authentication, hotkey capture, preference collection, and
+persistence of resulting settings. It is the primary onboarding entry point
+for CLI and tray-based setup actions.
+
+Key exports:
+    run_setup: Execute the full interactive setup sequence.
+"""
 
 import subprocess
 import sys
@@ -15,6 +24,11 @@ console = Console()
 
 
 def _print_banner() -> None:
+    """Render the setup banner in the terminal UI.
+
+    Returns:
+        None: This function does not return a value.
+    """
     banner_text = Text()
     banner_text.append("✈  ", style="bold cyan")
     banner_text.append("OTPilot Setup", style="bold white")
@@ -26,6 +40,12 @@ def _print_banner() -> None:
 
 
 def _setup_auth() -> bool:
+    """Authenticate the user and ensure a token is stored.
+
+    Returns:
+        bool: ``True`` when authentication succeeds or existing token is kept,
+            otherwise ``False``.
+    """
     console.print("[bold cyan]Step 1:[/bold cyan] Google Account Sign-In via Supabase\n")
 
     if token_exists():
@@ -49,17 +69,42 @@ def _setup_auth() -> bool:
 
 
 def _capture_hotkey() -> str:
+    """Capture a user-selected hotkey or fall back to default.
+
+    Returns:
+        str: Captured hotkey string, or configured default when unavailable.
+    """
     from otpilot.hotkey_listener import capture_hotkey
 
     console.print("[bold cyan]Step 2:[/bold cyan] Configure Hotkey")
     console.print("  Press your desired hotkey combination now...\n  [dim](Must include at least one modifier: Ctrl, Alt, Shift, or Cmd)[/dim]\n")
 
-    hotkey = capture_hotkey()
+    try:
+        hotkey = capture_hotkey()
+    except RuntimeError:
+        hotkey = DEFAULT_CONFIG["hotkey"]
+        console.print(
+            "  [yellow]⚠[/yellow] Hotkey capture unavailable in this environment."
+            f" Using default: [bold]{hotkey}[/bold]\n"
+        )
+        return hotkey
+
     console.print(f"  [green]✓[/green] Hotkey set to: [bold]{hotkey}[/bold]\n")
     return hotkey
 
 
 def _prompt_int(prompt_text: str, default: int, min_value: int, max_value: int) -> int:
+    """Prompt for a validated integer inside inclusive bounds.
+
+    Args:
+        prompt_text (str): Prompt label displayed to the user.
+        default (int): Default value shown in the prompt.
+        min_value (int): Minimum accepted numeric value.
+        max_value (int): Maximum accepted numeric value.
+
+    Returns:
+        int: Validated user-provided integer.
+    """
     while True:
         value_str = Prompt.ask(prompt_text, default=str(default), console=console)
         try:
@@ -76,6 +121,13 @@ def _prompt_int(prompt_text: str, default: int, min_value: int, max_value: int) 
 
 
 def _enable_auto_start() -> tuple[bool, list[str]]:
+    """Configure OS-specific auto-start entries for OTPilot.
+
+    Returns:
+        tuple[bool, list[str]]: ``(success, post_commands)`` where
+            ``post_commands`` are shell commands to execute immediately after
+            file creation (used for macOS launchctl activation).
+    """
     if sys.platform == "darwin":
         plist_path = Path.home() / "Library" / "LaunchAgents" / "com.otpilot.plist"
         plist_contents = (
@@ -106,6 +158,15 @@ def _enable_auto_start() -> tuple[bool, list[str]]:
 
 
 def run_setup() -> None:
+    """Run the complete interactive OTPilot setup wizard.
+
+    Returns:
+        None: This function does not return a value.
+
+    Raises:
+        OSError: If configuration files cannot be written.
+        TypeError: If configuration data cannot be serialized.
+    """
     _print_banner()
 
     if not _setup_auth():
@@ -127,12 +188,14 @@ def run_setup() -> None:
             console.print("  [yellow]⚠[/yellow] Auto-start isn't supported on this OS.")
         for cmd in post_cmds:
             try:
+                # Post-setup commands apply platform-specific startup registration.
                 subprocess.run(cmd, shell=True, check=False)
             except Exception:
                 pass
 
     config = DEFAULT_CONFIG.copy()
     if config_exists():
+        # Preserve existing non-interactive settings while updating prompted keys.
         config.update(get_config())
 
     config.update(

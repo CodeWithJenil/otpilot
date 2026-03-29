@@ -10,7 +10,7 @@ pip install otpilot
 ---
 
 <p align="center">
-  <strong>✈ OTPilot v2.0</strong>
+  <strong>✈ OTPilot v2.1</strong>
 </p>
 
 <p align="center">
@@ -29,9 +29,9 @@ pip install otpilot
 
 ## How It Works
 
-1. **OTPilot sits silently in your system tray** — no windows, no polling, zero CPU usage.
-2. **Press your hotkey** (e.g. `Ctrl+Shift+O`) — OTPilot fetches your last 10 emails from Gmail and extracts the OTP.
-3. **OTP is copied to your clipboard** — just paste it. A desktop notification confirms the action.
+1. **OTPilot sits silently in your system tray** — no polling loop, runs only when needed.
+2. **Press your hotkey** (e.g. `Ctrl+Shift+O`) or run `otpilot fetch` — OTPilot fetches recent Gmail emails and extracts an OTP.
+3. **OTP is copied to your clipboard** — and optionally auto-pasted. A desktop notification confirms the action.
 
 ## Installation
 
@@ -43,7 +43,7 @@ pip install otpilot
 
 - **Python 3.8+**
 - **Gmail account**
-- **Supabase project** with Google provider enabled ([setup guide](SETUP.md))
+- **Supabase-backed auth endpoint** (default is OTPilot hosted auth)
 - **OS**: macOS, Windows, or Linux
 
 > **Linux users**: Make sure `xclip` or `xsel` is installed for clipboard support.
@@ -53,9 +53,11 @@ pip install otpilot
 
 ## Quickstart
 
-### 1. Configure Supabase Auth
+### 1. Configure Auth (if self-hosting)
 
-Follow the [full guide](SETUP.md) to configure Supabase Google OAuth for OTPilot.
+For most users, no extra setup is required. OTPilot uses its hosted auth endpoint by default.
+
+If you run your own OTPilot auth API, follow [SETUP.md](SETUP.md) and set `OTPILOT_AUTH_BASE_URL`.
 
 ### 2. Run Setup
 
@@ -64,9 +66,10 @@ otpilot setup
 ```
 
 The wizard will:
-- Open your browser for Supabase Google sign-in (one-time authorization)
+- Open your browser for Supabase Google sign-in
 - Request Gmail read-only access
 - Let you set your preferred hotkey
+- Configure copy/paste and scan preferences
 - Save your configuration and token locally
 
 ### 3. Start OTPilot
@@ -80,27 +83,30 @@ OTPilot runs in the background with a system tray icon. Press your hotkey whenev
 ### 4. Daily Use
 
 1. Receive an OTP email in Gmail
-2. Press your hotkey (default: `Ctrl+Shift+O`)
+2. Press your hotkey (default: `Ctrl+Shift+O`) or run `otpilot fetch`
 3. Paste the OTP — done!
 
 ## Authentication Setup
 
-OTPilot now uses Supabase Auth for Google OAuth.
+OTPilot uses Supabase Auth for Google OAuth.
 
-1. Configure Google provider in Supabase
-2. Add `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` to your web API environment
-3. Run `otpilot setup` to complete browser auth
+1. Hosted mode (default): run `otpilot setup`
+2. Self-hosted mode: deploy the auth API and set `OTPILOT_AUTH_BASE_URL`
+3. Complete browser auth and OTPilot stores your token locally
 
 See [**SETUP.md**](SETUP.md) for full instructions.
 
 ## CLI Commands
 
-| Command            | Description                              |
-| ------------------ | ---------------------------------------- |
-| `otpilot setup`    | Run or re-run the interactive setup      |
-| `otpilot start`    | Start the background service             |
-| `otpilot status`   | Show auth state, hotkey, and config path |
-| `otpilot version`  | Print the version number                 |
+| Command              | Description                              |
+| -------------------- | ---------------------------------------- |
+| `otpilot setup`      | Run or re-run the interactive setup      |
+| `otpilot start`      | Start the background service             |
+| `otpilot fetch`      | Trigger one OTP fetch immediately        |
+| `otpilot status`     | Show auth state, hotkey, and config path |
+| `otpilot hotkey`     | View or reconfigure the global hotkey    |
+| `otpilot update`     | Check PyPI and upgrade via pip           |
+| `otpilot version`    | Print the version number                 |
 
 ## Configuration
 
@@ -111,23 +117,38 @@ OTPilot stores its configuration at `~/.otpilot/config.json`:
   "hotkey": "ctrl+shift+o",
   "notify_on_copy": true,
   "otp_max_age_minutes": 10,
-  "email_fetch_count": 10
+  "email_fetch_count": 10,
+  "auto_paste": false,
+  "auto_start_on_boot": false,
+  "notification_sound": false,
+  "mask_otp_in_notification": true,
+  "check_updates_on_start": true,
+  "theme": "default",
+  "setup_complete": false
 }
 ```
 
-| Field                 | Type   | Default          | Description                                    |
-| --------------------- | ------ | ---------------- | ---------------------------------------------- |
-| `hotkey`              | string | `ctrl+shift+o`   | Global hotkey combination                      |
-| `notify_on_copy`      | bool   | `true`           | Show desktop notification when OTP is copied   |
-| `otp_max_age_minutes` | int    | `10`             | Ignore emails older than this (minutes)        |
-| `email_fetch_count`   | int    | `10`             | Number of recent emails to scan                |
+| Field                      | Type    | Default          | Description                                    |
+| -------------------------- | ------- | ---------------- | ---------------------------------------------- |
+| `hotkey`                   | string  | `ctrl+shift+o`   | Global hotkey combination                      |
+| `notify_on_copy`           | bool    | `true`           | Show desktop notification when OTP is copied   |
+| `otp_max_age_minutes`      | int     | `10`             | Ignore emails older than this (minutes)        |
+| `email_fetch_count`        | int     | `10`             | Number of recent emails to scan                |
+| `auto_paste`               | bool    | `false`          | Auto-paste OTP after copying                   |
+| `auto_start_on_boot`       | bool    | `false`          | Register OTPilot to start on login             |
+| `notification_sound`       | bool    | `false`          | Reserved for future sound behavior             |
+| `mask_otp_in_notification` | bool    | `true`           | Mask middle OTP digits in notifications        |
+| `check_updates_on_start`   | bool    | `true`           | Check PyPI for updates on startup              |
+| `theme`                    | string  | `default`        | Reserved for future UI themes                  |
+| `setup_complete`           | bool    | `false`          | Indicates setup wizard completion              |
 
 ### Files Stored Locally
 
-| File                             | Purpose                              |
-| -------------------------------- | ------------------------------------ |
-| `~/.otpilot/config.json`        | Your hotkey and settings             |
-| `~/.otpilot/token.json`         | OAuth session token (auto-generated) |
+| File / Store                      | Purpose                              |
+| --------------------------------- | ------------------------------------ |
+| `~/.otpilot/config.json`          | Hotkey and runtime settings          |
+| System keyring (`otpilot`)        | Preferred token storage              |
+| `~/.otpilot/token.json`           | Fallback token storage               |
 
 ## Platform Support
 
@@ -143,14 +164,14 @@ OTPilot scans the subject line and body of your recent emails for:
 
 - **4–8 digit standalone numbers** near context words like *OTP*, *code*, *verify*, *verification*, *one-time*, *passcode*, *authentication*
 - Only emails within the configured time window are considered
-- If multiple OTPs are found, the most recent one wins
+- If multiple OTPs are found, subject matches are prioritized, then body matches
 
 ## Security & Privacy
 
 - **OAuth via Supabase**: browser sign-in is handled through Supabase Auth + Google provider.
 - **Read-only access**: OTPilot only reads your emails — it cannot send, delete, or modify anything.
-- **Local storage only**: Your OAuth token is stored locally at `~/.otpilot/token.json`. Nothing is sent to any third-party server.
-- **On-demand only**: Emails are fetched only when you press the hotkey. There is no background polling.
+- **Local storage only**: OAuth token is stored in system keyring when available, otherwise `~/.otpilot/token.json`.
+- **On-demand fetching**: Emails are fetched only when triggered by hotkey or `otpilot fetch`.
 
 ## Troubleshooting
 
@@ -159,8 +180,9 @@ OTPilot scans the subject line and body of your recent emails for:
 | "Not authenticated" error         | Run `otpilot setup` to re-authenticate                         |
 | No OTP found                      | Check `otp_max_age_minutes` — the email might be too old       |
 | Clipboard not working (Linux)     | Install `xclip`: `sudo apt install xclip`                      |
-| Hotkey not working                | Run `otpilot setup` to reconfigure the hotkey                  |
+| Hotkey not working                | Run `otpilot hotkey` or `otpilot setup`                        |
 | Tray icon not visible             | Check your system tray / menu bar settings                     |
+| Update notice appears repeatedly  | Run `otpilot update` or disable `check_updates_on_start`       |
 
 ## Contributing
 

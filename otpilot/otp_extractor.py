@@ -1,14 +1,18 @@
-"""OTP extraction from email content.
+"""OTP extraction utilities for Gmail message content.
 
-Uses regex-based pattern matching to find one-time passwords in email
-subjects and bodies. Context-aware: only matches digit sequences near
-OTP-related keywords.
+This module applies context-aware regular expressions to email subjects and
+bodies to identify one-time passwords. Within OTPilot, it is responsible for
+converting fetched message text into a single OTP candidate suitable for
+clipboard copy.
+
+Key exports:
+    extract_otp: Extract the highest-priority OTP from recent emails.
 """
 
 import re
 from typing import Dict, List, Optional
 
-# Keywords that indicate a digit sequence is likely an OTP
+# Keywords that indicate a nearby numeric token is likely an OTP.
 _CONTEXT_WORDS = [
     "otp",
     "code",
@@ -32,39 +36,39 @@ _CONTEXT_WORDS = [
     "mfa",
 ]
 
-# Compile a single pattern for context words (case-insensitive)
+# Compile one case-insensitive context matcher for OTP-adjacent language.
 _CONTEXT_PATTERN = re.compile(
     r"\b(?:" + "|".join(re.escape(w) for w in _CONTEXT_WORDS) + r")\b",
     re.IGNORECASE,
 )
 
-# Pattern to find standalone 4–8 digit numbers
+# Match standalone numeric sequences likely used as OTPs.
 _OTP_DIGIT_PATTERN = re.compile(r"(?<!\d)(\d{4,8})(?!\d)")
 
 
 def _has_otp_context(text: str) -> bool:
-    """Check whether the text contains OTP-related context words.
+    """Check whether text contains OTP-related context keywords.
 
     Args:
-        text: The text to search.
+        text (str): Text to inspect.
 
     Returns:
-        True if at least one context word is found.
+        bool: ``True`` when OTP context language is present.
     """
     return bool(_CONTEXT_PATTERN.search(text))
 
 
 def _find_otp_in_text(text: str) -> Optional[str]:
-    """Search for a standalone 4–8 digit number in text that also contains OTP context words.
+    """Extract the first OTP-like number from context-qualified text.
 
-    The function checks for context words first, then returns the first
-    digit match found.
+    The function first validates that the text contains OTP-related keywords,
+    then returns the first standalone 4-8 digit match.
 
     Args:
-        text: The email subject or body text.
+        text (str): Email subject or body text.
 
     Returns:
-        The OTP string, or None if no match is found.
+        Optional[str]: OTP digits when found, otherwise ``None``.
     """
     if not text or not _has_otp_context(text):
         return None
@@ -76,32 +80,33 @@ def _find_otp_in_text(text: str) -> Optional[str]:
 
 
 def extract_otp(emails: List[Dict[str, str]]) -> Optional[str]:
-    """Extract an OTP from a list of email dicts.
+    """Extract an OTP from recent emails using priority-based scanning.
 
-    Strategy (in priority order):
-      1. Search each email's subject line for a 4–8 digit number with
-         OTP context words.
-      2. Search each email's body for the same pattern.
-      3. Return the match from the most recent email (emails are assumed
-         to be ordered most-recent-first).
+    Search order:
+    1. Subject lines from most recent to oldest.
+    2. Message bodies from most recent to oldest.
 
     Args:
-        emails: A list of dicts, each with ``subject`` and ``body`` keys.
+        emails (List[Dict[str, str]]): Email dictionaries containing at least
+            ``subject`` and ``body`` keys.
 
     Returns:
-        The extracted OTP string, or None if nothing was found.
+        Optional[str]: First matching OTP candidate, or ``None`` if absent.
+
+    Raises:
+        None: This function does not raise application-level exceptions.
     """
     if not emails:
         return None
 
-    # Pass 1: search subjects (most-recent first)
+    # Pass 1: subjects often contain concise OTP phrases from providers.
     for email in emails:
         subject = email.get("subject", "")
         otp = _find_otp_in_text(subject)
         if otp:
             return otp
 
-    # Pass 2: search bodies (most-recent first)
+    # Pass 2: fallback to body scanning for providers that omit subject OTPs.
     for email in emails:
         body = email.get("body", "")
         otp = _find_otp_in_text(body)

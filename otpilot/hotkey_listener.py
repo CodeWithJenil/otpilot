@@ -1,7 +1,12 @@
-"""Global hotkey listener for OTPilot.
+"""Global hotkey capture for OTPilot.
 
-Uses ``pynput`` to capture keyboard shortcuts in a background thread.
-Supports human-readable hotkey strings like ``ctrl+shift+o``.
+This module wraps ``pynput`` to parse user-defined hotkey strings and listen
+for global keyboard events in the background. It provides both runtime hotkey
+listening and interactive hotkey capture used during setup.
+
+Key exports:
+    HotkeyListener: Background listener that triggers a callback on hotkey hit.
+    capture_hotkey: Interactive helper for collecting a hotkey combination.
 """
 
 import threading
@@ -12,14 +17,14 @@ try:
 
     _PYNPUT_AVAILABLE = True
     _PYNPUT_IMPORT_ERROR: Optional[Exception] = None
-except Exception as exc:  # Graceful fallback on headless environments
+except Exception as exc:  # Graceful fallback on headless environments.
     keyboard = None  # type: ignore[assignment]
     _PYNPUT_AVAILABLE = False
     _PYNPUT_IMPORT_ERROR = exc
 
 
 if _PYNPUT_AVAILABLE:
-    # Mapping of human-readable modifier names to pynput key objects
+    # Map user-friendly names to pynput's canonical modifier keys.
     _MODIFIER_MAP = {
         "ctrl": keyboard.Key.ctrl_l,
         "control": keyboard.Key.ctrl_l,
@@ -36,6 +41,7 @@ else:
 
 
 def _ensure_pynput_available() -> None:
+    """Raise an error when global keyboard hooks are unavailable."""
     if not _PYNPUT_AVAILABLE:
         raise RuntimeError(
             "Hotkey listener unavailable on this platform."
@@ -43,7 +49,18 @@ def _ensure_pynput_available() -> None:
 
 
 def _parse_hotkey(hotkey_str: str) -> tuple:
-    """Parse a human-readable hotkey string into pynput key objects."""
+    """Parse a hotkey string into modifier and main key components.
+
+    Args:
+        hotkey_str (str): Human-readable hotkey such as ``ctrl+shift+o``.
+
+    Returns:
+        tuple: ``(frozenset(modifiers), main_key)`` where ``main_key`` may be
+            ``None`` if parsing fails.
+
+    Raises:
+        RuntimeError: If ``pynput`` is not available on the current platform.
+    """
     _ensure_pynput_available()
 
     parts = [p.strip().lower() for p in hotkey_str.split("+")]
@@ -60,6 +77,7 @@ def _parse_hotkey(hotkey_str: str) -> tuple:
                 if len(part) == 1:
                     main_key = keyboard.KeyCode.from_char(part)
                 else:
+                    # Support common aliases for non-character main keys.
                     special_names = {
                         "space": keyboard.Key.space,
                         "enter": keyboard.Key.enter,
@@ -74,7 +92,17 @@ def _parse_hotkey(hotkey_str: str) -> tuple:
 
 
 def _normalize_key(key: object) -> object:
-    """Normalize left/right modifier variants to a single canonical form."""
+    """Normalize key variants so left/right modifiers are treated equally.
+
+    Args:
+        key (object): Raw key event object from ``pynput``.
+
+    Returns:
+        object: Canonicalized key representation.
+
+    Raises:
+        RuntimeError: If ``pynput`` is not available on the current platform.
+    """
     _ensure_pynput_available()
 
     normalization = {
@@ -89,9 +117,33 @@ def _normalize_key(key: object) -> object:
 
 
 class HotkeyListener:
-    """Listens for a global hotkey combination in a background thread."""
+    """Listen for a configured global hotkey and invoke a callback.
+
+    Responsibilities:
+    - Parse a human-readable hotkey string.
+    - Track currently pressed keys.
+    - Trigger a callback when all required keys are held.
+
+    Key attributes:
+        _hotkey_str: Original hotkey string from configuration.
+        _modifiers: Canonical modifier key set required for activation.
+        _main_key: Main non-modifier key for activation.
+        _pressed: Set of currently pressed normalized keys.
+    """
 
     def __init__(self, hotkey_str: str, callback: Callable[[], None]) -> None:
+        """Initialize a hotkey listener instance.
+
+        Args:
+            hotkey_str (str): Hotkey definition, for example ``ctrl+shift+o``.
+            callback (Callable[[], None]): Function called on hotkey activation.
+
+        Returns:
+            None: This constructor does not return a value.
+
+        Raises:
+            RuntimeError: If ``pynput`` is unavailable on this platform.
+        """
         _ensure_pynput_available()
         self._hotkey_str = hotkey_str
         self._callback = callback
@@ -103,9 +155,18 @@ class HotkeyListener:
         self._thread: Optional[threading.Thread] = None
 
     def _on_press(self, key: object) -> None:
+        """Handle key-down events from ``pynput`` listener.
+
+        Args:
+            key (object): Raw key event.
+
+        Returns:
+            None: This callback does not return a value.
+        """
         normalized = _normalize_key(key)
         self._pressed.add(normalized)
 
+        # Lowercase characters so uppercase/lowercase presses match config.
         if isinstance(key, keyboard.KeyCode) and key.char:
             self._pressed.add(keyboard.KeyCode.from_char(key.char.lower()))
 
@@ -116,6 +177,14 @@ class HotkeyListener:
                 self._callback()
 
     def _on_release(self, key: object) -> None:
+        """Handle key-up events from ``pynput`` listener.
+
+        Args:
+            key (object): Raw key event.
+
+        Returns:
+            None: This callback does not return a value.
+        """
         normalized = _normalize_key(key)
         self._pressed.discard(normalized)
 
@@ -123,23 +192,55 @@ class HotkeyListener:
             self._pressed.discard(keyboard.KeyCode.from_char(key.char.lower()))
 
     def start(self) -> None:
+        """Start listening for global hotkey events.
+
+        Returns:
+            None: This method does not return a value.
+
+        Raises:
+            RuntimeError: If ``pynput`` is unavailable on this platform.
+        """
         _ensure_pynput_available()
         self._listener = keyboard.Listener(on_press=self._on_press, on_release=self._on_release)
         self._listener.daemon = True
         self._listener.start()
 
     def stop(self) -> None:
+        """Stop listening for global hotkey events.
+
+        Returns:
+            None: This method does not return a value.
+
+        Raises:
+            None: This method suppresses listener absence gracefully.
+        """
         if self._listener is not None:
             self._listener.stop()
             self._listener = None
 
     @property
     def hotkey_string(self) -> str:
+        """Return the configured hotkey string.
+
+        Returns:
+            str: Original human-readable hotkey configuration string.
+
+        Raises:
+            None: This property accessor does not raise application errors.
+        """
         return self._hotkey_str
 
 
 def capture_hotkey() -> str:
-    """Interactively capture a hotkey combination from the user."""
+    """Interactively capture a hotkey combination from the keyboard.
+
+    Returns:
+        str: Captured hotkey string, or default ``ctrl+shift+o`` if capture
+            times out.
+
+    Raises:
+        RuntimeError: If ``pynput`` is unavailable on this platform.
+    """
     _ensure_pynput_available()
 
     captured_keys: Set[object] = set()
@@ -153,6 +254,7 @@ def capture_hotkey() -> str:
     def on_release(key: object) -> Optional[bool]:
         parts: list = []
 
+        # Keep a stable modifier order so captured strings are predictable.
         modifier_order = [
             (keyboard.Key.ctrl_l, "ctrl"),
             (keyboard.Key.alt_l, "alt"),

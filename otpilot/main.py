@@ -1,8 +1,14 @@
-"""Entry point for OTPilot.
+"""CLI and runtime entry point for OTPilot.
 
-Starts the system tray icon and global hotkey listener. On hotkey
-trigger, fetches recent emails, extracts the OTP, copies it to the
-clipboard, and shows a desktop notification.
+This module wires together OTPilot's configuration, Gmail fetching, OTP
+extraction, clipboard integration, notifications, tray UI, and command-line
+interface. It is the operational core that starts background services and
+exposes user-facing CLI commands.
+
+Key exports:
+    run: Start the OTPilot background service.
+    cli: Root Click command group for OTPilot commands.
+    main: Console script entry point.
 """
 
 import signal
@@ -20,14 +26,18 @@ from otpilot import __version__
 from otpilot.clipboard import ClipboardError, copy_to_clipboard
 from otpilot.config import config_exists, get_config, token_exists
 from otpilot.gmail_client import GmailAuthError, NotAuthenticatedError, fetch_recent_emails
+
 try:
     from otpilot.hotkey_listener import HotkeyListener
+
     _HOTKEY_LISTENER_AVAILABLE = True
 except Exception:
     HotkeyListener = None  # type: ignore[assignment]
     _HOTKEY_LISTENER_AVAILABLE = False
+
 from otpilot.notifier import notify
 from otpilot.otp_extractor import extract_otp
+
 try:
     from otpilot.tray import TrayApp
 
@@ -39,14 +49,20 @@ except Exception:
 
 console = Console()
 
-# Global references for cleanup
+# Global references for cleanup.
 _listener: Optional[object] = None
 _tray: Optional[object] = None
 
 
 def _fetch_latest_version() -> Optional[str]:
-    """Fetch the latest OTPilot version from PyPI."""
+    """Fetch the latest OTPilot version string from PyPI metadata.
+
+    Returns:
+        Optional[str]: Latest published version string, or ``None`` if lookup
+            fails.
+    """
     try:
+        # Query the PyPI JSON API for package metadata.
         response = requests.get("https://pypi.org/pypi/otpilot/json", timeout=5)
         response.raise_for_status()
         payload = response.json()
@@ -57,18 +73,28 @@ def _fetch_latest_version() -> Optional[str]:
 
 
 def _is_update_available(current: str, latest: str) -> bool:
-    """Compare current vs latest version strings."""
+    """Compare installed and latest version strings.
+
+    Args:
+        current (str): Currently installed OTPilot version.
+        latest (str): Latest available OTPilot version.
+
+    Returns:
+        bool: ``True`` when ``latest`` is newer than ``current``.
+    """
     try:
         from packaging.version import Version
 
         return Version(latest) > Version(current)
     except Exception:
+
         def _version_tuple(value: str) -> tuple:
             parts = []
             for piece in value.replace("-", ".").split("."):
                 if piece.isdigit():
                     parts.append(int(piece))
                 else:
+                    # Extract digits from labels like "rc1" for fallback compare.
                     digits = "".join(ch for ch in piece if ch.isdigit())
                     if digits:
                         parts.append(int(digits))
@@ -78,7 +104,11 @@ def _is_update_available(current: str, latest: str) -> bool:
 
 
 def _check_for_update() -> Optional[str]:
-    """Return latest version string if an update is available."""
+    """Return latest version only when an update is available.
+
+    Returns:
+        Optional[str]: Newer version string when available, otherwise ``None``.
+    """
     latest = _fetch_latest_version()
     if not latest:
         return None
@@ -88,11 +118,10 @@ def _check_for_update() -> Optional[str]:
 
 
 def _on_hotkey_triggered() -> None:
-    """Callback invoked when the user presses the configured hotkey.
+    """Handle OTP retrieval workflow triggered by hotkey or CLI.
 
-    Fetches recent emails, extracts the OTP, copies it to clipboard,
-    and shows a notification. All errors are caught and surfaced as
-    notifications — the service never crashes silently.
+    Returns:
+        None: This function does not return a value.
     """
     try:
         emails = fetch_recent_emails()
@@ -130,11 +159,11 @@ def _on_hotkey_triggered() -> None:
                 controller.press("v")
                 controller.release("v")
         except Exception:
-            # Fall back silently to clipboard copy
+            # Auto-paste is optional; clipboard copy already succeeded.
             pass
 
     if config.get("notify_on_copy", True):
-        # Mask middle digits for privacy in notification
+        # Mask middle digits for privacy in notification popups.
         masked = otp
         if config.get("mask_otp_in_notification", True) and len(otp) > 4:
             masked = otp[:2] + "•" * (len(otp) - 4) + otp[-2:]
@@ -142,7 +171,11 @@ def _on_hotkey_triggered() -> None:
 
 
 def _cleanup() -> None:
-    """Clean up listener and tray on exit."""
+    """Stop background listeners and tray resources.
+
+    Returns:
+        None: This function does not return a value.
+    """
     global _listener, _tray
     if _listener is not None:
         _listener.stop()
@@ -153,7 +186,11 @@ def _cleanup() -> None:
 
 
 def _block_forever_until_signal() -> None:
-    """Keep the service alive when tray UI is unavailable."""
+    """Block process lifetime in environments without tray UI.
+
+    Returns:
+        None: This function does not return a value.
+    """
     try:
         while True:
             time.sleep(1)
@@ -164,15 +201,18 @@ def _block_forever_until_signal() -> None:
 def run() -> None:
     """Start the OTPilot background service.
 
-    Initializes the hotkey listener in a background thread and starts
-    the system tray icon in the main thread (required by pystray on
-    macOS).
+    Returns:
+        None: This function does not return a value.
+
+    Raises:
+        None: Startup errors are handled internally with notifications/logging.
     """
     global _listener, _tray
 
-    # First-run check
+    # Force first-run setup when either config or auth token is missing.
     if not config_exists() or not token_exists():
         from otpilot.setup_wizard import run_setup
+
         run_setup()
         return
 
@@ -180,6 +220,7 @@ def run() -> None:
     hotkey_str = config.get("hotkey", "ctrl+shift+o")
 
     if config.get("check_updates_on_start", True):
+
         def _background_update_check() -> None:
             latest = _check_for_update()
             if latest:
@@ -187,7 +228,7 @@ def run() -> None:
 
         threading.Thread(target=_background_update_check, daemon=True).start()
 
-    # Set up signal handlers for clean exit
+    # Handle termination signals so tray and listener are always released.
     def _signal_handler(sig: int, frame: object) -> None:
         _cleanup()
         sys.exit(0)
@@ -195,7 +236,7 @@ def run() -> None:
     signal.signal(signal.SIGINT, _signal_handler)
     signal.signal(signal.SIGTERM, _signal_handler)
 
-    # Start hotkey listener in background thread (if available)
+    # Start global hotkey listener when platform backend is available.
     if _HOTKEY_LISTENER_AVAILABLE and HotkeyListener is not None:
         try:
             _listener = HotkeyListener(hotkey_str, _on_hotkey_triggered)
@@ -208,8 +249,7 @@ def run() -> None:
         console.print("[yellow]Hotkey listener unavailable on this platform[/yellow]")
         notify("OTPilot", "Running without hotkey support.")
 
-    # Start tray in main thread (blocks until quit). If unavailable,
-    # continue running without tray support.
+    # Start tray on main thread; otherwise keep process alive without UI.
     if _TRAY_AVAILABLE and TrayApp is not None:
         try:
             _tray = TrayApp(on_quit=_cleanup)
@@ -225,34 +265,76 @@ def run() -> None:
     _block_forever_until_signal()
 
 
-# ---------------------------------------------------------------------------
-# CLI interface
-# ---------------------------------------------------------------------------
-
 @click.group(invoke_without_command=True)
 @click.pass_context
 def cli(ctx: click.Context) -> None:
-    """OTPilot — Background OTP copier for Gmail."""
+    """Root OTPilot command group.
+
+    Args:
+        ctx (click.Context): Click context for command dispatch.
+
+    Returns:
+        None: This command callback does not return a value.
+
+    Raises:
+        None: Click handles CLI-level errors.
+    """
     if ctx.invoked_subcommand is None:
         click.echo(ctx.get_help())
 
 
 @cli.command()
 def setup() -> None:
-    """Run or re-run the interactive setup wizard."""
+    """Run or re-run the interactive setup wizard.
+
+    Returns:
+        None: This command does not return a value.
+
+    Raises:
+        None: Setup errors are handled within wizard flow.
+    """
     from otpilot.setup_wizard import run_setup
+
     run_setup()
 
 
 @cli.command()
 def start() -> None:
-    """Start the OTPilot background service."""
+    """Start the OTPilot background service.
+
+    Returns:
+        None: This command does not return a value.
+
+    Raises:
+        None: Runtime errors are handled during service startup.
+    """
     run()
 
 
 @cli.command()
+def fetch() -> None:
+    """Trigger a one-time OTP fetch using current settings.
+
+    Returns:
+        None: This command does not return a value.
+
+    Raises:
+        None: Runtime errors are handled inside the fetch workflow.
+    """
+    _on_hotkey_triggered()
+    click.echo("OTP fetch triggered.")
+
+
+@cli.command()
 def status() -> None:
-    """Show the current OTPilot status."""
+    """Print current OTPilot configuration and authentication status.
+
+    Returns:
+        None: This command does not return a value.
+
+    Raises:
+        None: Missing state is displayed to the user instead of raising.
+    """
     from otpilot.config import CONFIG_FILE
 
     authenticated = token_exists()
@@ -264,7 +346,6 @@ def status() -> None:
     console.print(
         f"  Authenticated:  {'[green]Yes[/green]' if authenticated else '[red]No[/red]'}"
     )
-
 
     if has_config:
         config = get_config()
@@ -286,15 +367,25 @@ def status() -> None:
 
 @cli.command()
 @click.option("--set", "hotkey_value", default=None, help='Set hotkey directly, e.g. --set "ctrl+shift+o"')
-def hotkey(hotkey_value: str) -> None:
-    """View or change the global hotkey."""
-    from otpilot.config import set_value, get_value
+def hotkey(hotkey_value: Optional[str]) -> None:
+    """View or update the configured global hotkey.
+
+    Args:
+        hotkey_value (Optional[str]): Optional direct hotkey value from
+            ``--set``.
+
+    Returns:
+        None: This command does not return a value.
+
+    Raises:
+        None: Input errors are handled interactively.
+    """
+    from otpilot.config import get_value, set_value
     from otpilot.hotkey_listener import capture_hotkey
 
     current = get_value("hotkey", "not set")
 
     if hotkey_value is not None:
-        # Direct set via --set flag
         set_value("hotkey", hotkey_value)
         console.print(f"\n  [green]✓[/green] Hotkey changed: [dim]{current}[/dim] → [bold]{hotkey_value}[/bold]")
         console.print("  [dim]Restart OTPilot for changes to take effect.[/dim]\n")
@@ -318,13 +409,27 @@ def hotkey(hotkey_value: str) -> None:
 
 @cli.command()
 def version() -> None:
-    """Print the OTPilot version."""
+    """Print the installed OTPilot version.
+
+    Returns:
+        None: This command does not return a value.
+
+    Raises:
+        None: This command does not raise application-level exceptions.
+    """
     click.echo(f"OTPilot v{__version__}")
 
 
 @cli.command()
 def update() -> None:
-    """Check for and install OTPilot updates."""
+    """Check for and optionally install OTPilot updates via pip.
+
+    Returns:
+        None: This command does not return a value.
+
+    Raises:
+        None: Update failures are reported to the user.
+    """
     latest = _fetch_latest_version()
     if latest is None:
         click.echo("Could not check for updates. Please try again later.")
@@ -350,7 +455,14 @@ def update() -> None:
 
 
 def main() -> None:
-    """CLI entry point."""
+    """Invoke the OTPilot CLI entry point.
+
+    Returns:
+        None: This function does not return a value.
+
+    Raises:
+        None: Command errors are managed by Click.
+    """
     cli()
 
 
