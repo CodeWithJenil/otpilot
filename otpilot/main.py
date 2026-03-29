@@ -11,6 +11,8 @@ Key exports:
     main: Console script entry point.
 """
 
+import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -198,6 +200,70 @@ def _block_forever_until_signal() -> None:
         _cleanup()
 
 
+def _print_feedback_prompt() -> None:
+    """Print feedback prompt for users.
+
+    Returns:
+        None: This function does not return a value.
+    """
+    console.print("Feedback? github.com/codewithjenil/otpilot/discussions")
+
+
+def _select_background_python() -> str:
+    """Select the Python executable for background launch.
+
+    Returns:
+        str: Path to the Python executable suitable for background use.
+    """
+    if sys.platform == "darwin":
+        pythonw = shutil.which("pythonw")
+        if pythonw:
+            return pythonw
+    return sys.executable
+
+
+def _launch_detached_background() -> subprocess.Popen:
+    """Launch OTPilot as a detached background process.
+
+    Returns:
+        subprocess.Popen: Handle to the newly launched background process.
+    """
+    log_path = os.path.expanduser("~/.otpilot/otpilot.log")
+    pid_path = os.path.expanduser("~/.otpilot/otpilot.pid")
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+
+    env = os.environ.copy()
+    env["OTPILOT_BACKGROUND"] = "1"
+
+    python_exec = _select_background_python()
+    args = [python_exec, "-m", "otpilot.main", "start"]
+
+    log_file = open(log_path, "a", encoding="utf-8")
+    try:
+        popen_kwargs = {
+            "close_fds": True,
+            "stdout": log_file,
+            "stderr": log_file,
+            "env": env,
+        }
+
+        if sys.platform.startswith("win"):
+            popen_kwargs["creationflags"] = (
+                subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+            )
+        else:
+            popen_kwargs["start_new_session"] = True
+
+        process = subprocess.Popen(args, **popen_kwargs)
+    finally:
+        log_file.close()
+
+    with open(pid_path, "w", encoding="utf-8") as pid_file:
+        pid_file.write(str(process.pid))
+
+    return process
+
+
 def run() -> None:
     """Start the OTPilot background service.
 
@@ -296,6 +362,7 @@ def setup() -> None:
     from otpilot.setup_wizard import run_setup
 
     run_setup()
+    _print_feedback_prompt()
 
 
 @cli.command()
@@ -308,7 +375,15 @@ def start() -> None:
     Raises:
         None: Runtime errors are handled during service startup.
     """
+    if os.environ.get("OTPILOT_BACKGROUND") != "1":
+        process = _launch_detached_background()
+        console.print("OTPilot started in background. Press your hotkey to fetch an OTP.")
+        console.print(f"PID: {process.pid}")
+        _print_feedback_prompt()
+        return
+
     run()
+    _print_feedback_prompt()
 
 
 @cli.command()
@@ -323,6 +398,7 @@ def fetch() -> None:
     """
     _on_hotkey_triggered()
     click.echo("OTP fetch triggered.")
+    _print_feedback_prompt()
 
 
 @cli.command()
@@ -363,6 +439,7 @@ def status() -> None:
 
     if not authenticated or not has_config:
         console.print("  [dim]Run [bold]otpilot setup[/bold] to get started.[/dim]\n")
+    _print_feedback_prompt()
 
 
 @cli.command()
@@ -389,6 +466,7 @@ def hotkey(hotkey_value: Optional[str]) -> None:
         set_value("hotkey", hotkey_value)
         console.print(f"\n  [green]✓[/green] Hotkey changed: [dim]{current}[/dim] → [bold]{hotkey_value}[/bold]")
         console.print("  [dim]Restart OTPilot for changes to take effect.[/dim]\n")
+        _print_feedback_prompt()
         return
 
     console.print(f"\n  Current hotkey: [bold]{current}[/bold]\n")
@@ -405,6 +483,7 @@ def hotkey(hotkey_value: Optional[str]) -> None:
     set_value("hotkey", new_hotkey)
     console.print(f"  [green]✓[/green] Hotkey changed: [dim]{current}[/dim] → [bold]{new_hotkey}[/bold]")
     console.print("  [dim]Restart OTPilot for changes to take effect.[/dim]\n")
+    _print_feedback_prompt()
 
 
 @cli.command()
@@ -418,6 +497,7 @@ def version() -> None:
         None: This command does not raise application-level exceptions.
     """
     click.echo(f"OTPilot v{__version__}")
+    _print_feedback_prompt()
 
 
 @cli.command()
@@ -433,16 +513,19 @@ def update() -> None:
     latest = _fetch_latest_version()
     if latest is None:
         click.echo("Could not check for updates. Please try again later.")
+        _print_feedback_prompt()
         return
 
     if not _is_update_available(__version__, latest):
         click.echo(f"OTPilot is up to date (v{__version__})")
+        _print_feedback_prompt()
         return
 
     click.echo(f"Update available: v{__version__} → v{latest}")
     click.echo("Run: pip install --upgrade otpilot")
 
     if not click.confirm("Update now?", default=True):
+        _print_feedback_prompt()
         return
 
     result = subprocess.run(
@@ -452,6 +535,7 @@ def update() -> None:
         click.echo("Updated successfully. Restart OTPilot.")
     else:
         click.echo("Update failed. Please run: pip install --upgrade otpilot")
+    _print_feedback_prompt()
 
 
 def main() -> None:
