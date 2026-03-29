@@ -21,7 +21,7 @@ pip install otpilot
   <a href="https://github.com/codewithjenil/otpilot">GitHub</a> •
   <a href="#installation">Install</a> •
   <a href="#quickstart">Quickstart</a> •
-  <a href="SETUP.md">OAuth Setup</a> •
+  <a href="SETUP.md">Supabase Auth Setup</a> •
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
@@ -43,7 +43,7 @@ pip install otpilot
 
 - **Python 3.8+**
 - **Gmail account**
-- **Google Cloud project** with Gmail API enabled (free — [setup guide](SETUP.md))
+- **Supabase project** with Google provider enabled ([setup guide](SETUP.md))
 - **OS**: macOS, Windows, or Linux
 
 > **Linux users**: Make sure `xclip` or `xsel` is installed for clipboard support.
@@ -53,9 +53,9 @@ pip install otpilot
 
 ## Quickstart
 
-### 1. Get Your Credentials
+### 1. Configure Supabase Auth
 
-Follow the steps above (or the [full guide](SETUP.md)) to download your `credentials.json` file.
+Follow the [full guide](SETUP.md) to configure Supabase Google OAuth for OTPilot.
 
 ### 2. Run Setup
 
@@ -64,10 +64,10 @@ otpilot setup
 ```
 
 The wizard will:
-- Ask for the path to your `credentials.json` file
-- Open your browser for Google sign-in (one-time authorization)
+- Open your browser for Supabase Google sign-in (one-time authorization)
+- Request Gmail read-only access
 - Let you set your preferred hotkey
-- Save your configuration
+- Save your configuration and token locally
 
 ### 3. Start OTPilot
 
@@ -83,20 +83,15 @@ OTPilot runs in the background with a system tray icon. Press your hotkey whenev
 2. Press your hotkey (default: `Ctrl+Shift+O`)
 3. Paste the OTP — done!
 
-## Getting Your credentials.json
+## Authentication Setup
 
-Before using OTPilot, you need to download a `credentials.json` file from Google Cloud Console. This is a one-time, ~5 minute process.
+OTPilot now uses Supabase Auth for Google OAuth.
 
-1. Go to [console.cloud.google.com](https://console.cloud.google.com)
-2. Create a new project (or use an existing one)
-3. Enable the **Gmail API**
-4. Go to **APIs & Services → Credentials**
-5. Create an **OAuth 2.0 Client ID** (Application type: **Desktop app**)
-6. Click **Download JSON** to save the `credentials.json` file
+1. Configure Google provider in Supabase
+2. Add `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` to your web API environment
+3. Run `otpilot setup` to complete browser auth
 
-> **Your credentials never leave your machine.** The file is stored locally at `~/.otpilot/credentials.json`.
-
-For detailed, step-by-step instructions with screenshots, see [**SETUP.md**](SETUP.md).
+See [**SETUP.md**](SETUP.md) for full instructions.
 
 ## CLI Commands
 
@@ -132,7 +127,6 @@ OTPilot stores its configuration at `~/.otpilot/config.json`:
 | File                             | Purpose                              |
 | -------------------------------- | ------------------------------------ |
 | `~/.otpilot/config.json`        | Your hotkey and settings             |
-| `~/.otpilot/credentials.json`   | Your Google OAuth credentials        |
 | `~/.otpilot/token.json`         | OAuth session token (auto-generated) |
 
 ## Platform Support
@@ -153,7 +147,7 @@ OTPilot scans the subject line and body of your recent emails for:
 
 ## Security & Privacy
 
-- **Your credentials stay local**: `credentials.json` is stored on your machine at `~/.otpilot/` and is never uploaded anywhere.
+- **OAuth via Supabase**: browser sign-in is handled through Supabase Auth + Google provider.
 - **Read-only access**: OTPilot only reads your emails — it cannot send, delete, or modify anything.
 - **Local storage only**: Your OAuth token is stored locally at `~/.otpilot/token.json`. Nothing is sent to any third-party server.
 - **On-demand only**: Emails are fetched only when you press the hotkey. There is no background polling.
@@ -162,8 +156,6 @@ OTPilot scans the subject line and body of your recent emails for:
 
 | Issue                             | Solution                                                       |
 | --------------------------------- | -------------------------------------------------------------- |
-| "credentials.json not found"      | Run `otpilot setup` and provide your credentials file          |
-| "Invalid credentials file"        | Re-download credentials.json from Google Cloud Console         |
 | "Not authenticated" error         | Run `otpilot setup` to re-authenticate                         |
 | No OTP found                      | Check `otp_max_age_minutes` — the email might be too old       |
 | Clipboard not working (Linux)     | Install `xclip`: `sudo apt install xclip`                      |

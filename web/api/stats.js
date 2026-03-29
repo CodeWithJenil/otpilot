@@ -1,21 +1,7 @@
-type StatsResponse = {
-  downloads: {
-    last_day: number;
-    last_week: number;
-    last_month: number;
-  };
-  github: {
-    stars: number;
-    forks: number;
-  };
-  pypi_url: string;
-  github_url: string;
-};
-
 const PYPI_URL = "https://pypistats.org/api/packages/otpilot/recent";
 const GITHUB_URL = "https://api.github.com/repos/CodeWithJenil/otpilot";
 
-async function fetchJson(url: string, init?: RequestInit): Promise<any> {
+async function fetchJson(url, init) {
   const response = await fetch(url, init);
   if (!response.ok) {
     throw new Error(`Request failed: ${response.status}`);
@@ -23,7 +9,7 @@ async function fetchJson(url: string, init?: RequestInit): Promise<any> {
   return response.json();
 }
 
-export default async function handler(req: any, res: any): Promise<void> {
+export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Cache-Control", "s-maxage=3600");
 
@@ -33,7 +19,7 @@ export default async function handler(req: any, res: any): Promise<void> {
     return;
   }
 
-  const result: StatsResponse = {
+  const result = {
     downloads: {
       last_day: 0,
       last_week: 0,
@@ -52,7 +38,7 @@ export default async function handler(req: any, res: any): Promise<void> {
     fetchJson(GITHUB_URL, {
       headers: {
         "User-Agent": "otpilot-stats",
-        "Accept": "application/vnd.github+json",
+        Accept: "application/vnd.github+json",
       },
     }),
   ]);

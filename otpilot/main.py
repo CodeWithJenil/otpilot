@@ -19,7 +19,7 @@ from rich.console import Console
 from otpilot import __version__
 from otpilot.clipboard import ClipboardError, copy_to_clipboard
 from otpilot.config import config_exists, get_config, token_exists
-from otpilot.gmail_client import CredentialsNotFoundError, GmailAuthError, NotAuthenticatedError, fetch_recent_emails
+from otpilot.gmail_client import GmailAuthError, NotAuthenticatedError, fetch_recent_emails
 from otpilot.hotkey_listener import HotkeyListener
 from otpilot.notifier import notify
 from otpilot.otp_extractor import extract_otp
@@ -85,9 +85,6 @@ def _on_hotkey_triggered() -> None:
     """
     try:
         emails = fetch_recent_emails()
-    except CredentialsNotFoundError:
-        notify("OTPilot", "credentials.json not found. Run `otpilot setup` again.")
-        return
     except NotAuthenticatedError:
         notify("OTPilot", "Please re-authenticate. Run: otpilot setup")
         return
@@ -154,8 +151,7 @@ def run() -> None:
     global _listener, _tray
 
     # First-run check
-    from otpilot.credentials import credentials_exist
-    if not config_exists() or not token_exists() or not credentials_exist():
+    if not config_exists() or not token_exists():
         from otpilot.setup_wizard import run_setup
         run_setup()
         return
@@ -230,11 +226,6 @@ def status() -> None:
         f"  Authenticated:  {'[green]Yes[/green]' if authenticated else '[red]No[/red]'}"
     )
 
-    from otpilot.credentials import credentials_exist
-    has_credentials = credentials_exist()
-    console.print(
-        f"  Credentials:    {'[green]Yes[/green]' if has_credentials else '[red]No[/red]'}"
-    )
 
     if has_config:
         config = get_config()

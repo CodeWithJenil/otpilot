@@ -48,7 +48,7 @@ const Installation = () => {
           <div className="space-y-2">
             <h2 className="text-2xl font-bold">Step 2 — Get Google Credentials</h2>
             <p className="text-muted-foreground">
-              To use OTPilot, you need your own <code className="text-primary">credentials.json</code> file from the Google Cloud Console.
+              To use OTPilot, you need your own <code className="text-primary">Supabase Google OAuth</code> file from the Google Cloud Console.
             </p>
           </div>
 
@@ -84,7 +84,7 @@ const Installation = () => {
           </pre>
 
           <p className="text-sm text-muted-foreground">
-            When prompted, provide the path to the <code className="text-primary">credentials.json</code> you downloaded in Step 2.
+            When prompted, provide the path to the <code className="text-primary">Supabase Google OAuth</code> you downloaded in Step 2.
           </p>
         </div>
 

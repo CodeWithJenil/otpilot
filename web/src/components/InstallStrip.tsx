@@ -57,7 +57,7 @@ const InstallStrip = () => {
               {SETUP_COMMAND}
             </pre>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              Run the setup wizard to import your <code className="text-foreground border-b border-border/30">credentials.json</code> and authorize your Gmail account securely.
+              Run the setup wizard to import your <code className="text-foreground border-b border-border/30">Supabase Google OAuth</code> and authorize your Gmail account securely.
             </p>
           </div>
         </div>

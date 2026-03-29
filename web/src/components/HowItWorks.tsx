@@ -4,7 +4,7 @@ const steps = [
   {
     num: "01",
     title: "Setup",
-    desc: "Run `pip install otpilot` and provide your credentials.json.",
+    desc: "Run `pip install otpilot` and provide your Supabase Google OAuth.",
   },
   {
     num: "02",

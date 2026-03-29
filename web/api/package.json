@@ -1,7 +1,6 @@
 {
   "type": "module",
   "dependencies": {
-    "jose": "latest",
-    "nanoid": "latest"
+    "@supabase/supabase-js": "^2.49.8"
   }
 }

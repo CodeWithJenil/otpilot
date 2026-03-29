@@ -84,12 +84,13 @@ def config_exists() -> bool:
 
 
 def token_exists() -> bool:
-    """Check whether an OAuth token file already exists.
+    """Check whether an OAuth token is already stored (keyring or file)."""
+    try:
+        from otpilot.token_store import token_exists as stored_token_exists
 
-    Returns:
-        True if token.json is present, False otherwise.
-    """
-    return TOKEN_FILE.exists()
+        return stored_token_exists()
+    except Exception:
+        return TOKEN_FILE.exists()
 
 
 def get_value(key: str, default: Optional[Any] = None) -> Any:

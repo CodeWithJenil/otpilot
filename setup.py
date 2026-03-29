@@ -27,7 +27,6 @@ setup(
     packages=find_packages(include=["otpilot*"]),
     install_requires=[
         "google-api-python-client>=2.100.0",
-        "google-auth-oauthlib>=1.1.0",
         "google-auth>=2.23.0",
         "pynput>=1.7.6",
         "pystray>=0.19.5",
@@ -36,6 +35,7 @@ setup(
         "plyer>=2.1.0",
         "click>=8.1.0",
         "rich>=13.0.0",
+        "keyring>=24.0.0",
     ],
     entry_points={
         "console_scripts": [
