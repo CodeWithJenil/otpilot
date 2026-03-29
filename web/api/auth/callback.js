@@ -1,7 +1,7 @@
-import { createSupabaseClient } from "../lib/supabase.js";
-import { putSessionToken, pruneExpired } from "./store.js";
+const { createSupabaseClient } = require("../lib/supabase.js");
+const { putSessionToken, pruneExpired } = require("./store.js");
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   if (req.method && req.method !== "GET") {
     res.statusCode = 405;
     res.end("Method Not Allowed");
@@ -42,8 +42,8 @@ export default async function handler(req, res) {
     }
 
     if (providerToken) {
-      pruneExpired();
-      putSessionToken(sessionKey, providerToken);
+      await pruneExpired();
+      await putSessionToken(sessionKey, providerToken);
       res.statusCode = 200;
       res.setHeader("Content-Type", "text/html; charset=utf-8");
       res.end("<h1>OTPilot connected</h1><p>You can close this tab and return to your terminal.</p>");
@@ -66,4 +66,4 @@ export default async function handler(req, res) {
     res.statusCode = 500;
     res.end(`Auth callback failed: ${error instanceof Error ? error.message : "Unknown error"}`);
   }
-}
+};

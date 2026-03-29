@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+const { createClient } = require("@supabase/supabase-js");
 
 function getEnv(name) {
   const value = process.env[name];
@@ -8,7 +8,7 @@ function getEnv(name) {
   return value;
 }
 
-export function createSupabaseClient() {
+function createSupabaseClient() {
   const supabaseUrl = getEnv("SUPABASE_URL");
   const supabaseAnonKey = getEnv("SUPABASE_ANON_KEY");
 
@@ -21,7 +21,7 @@ export function createSupabaseClient() {
   });
 }
 
-export function createSupabaseAdminClient() {
+function createSupabaseAdminClient() {
   const supabaseUrl = getEnv("SUPABASE_URL");
   const serviceRoleKey = getEnv("SUPABASE_SERVICE_ROLE_KEY");
 
@@ -33,3 +33,8 @@ export function createSupabaseAdminClient() {
     },
   });
 }
+
+module.exports = {
+  createSupabaseClient,
+  createSupabaseAdminClient,
+};

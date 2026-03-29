@@ -1,6 +1,6 @@
-import { pruneExpired, takeSessionToken } from "./store.js";
+const { pruneExpired, takeSessionToken } = require("./store.js");
 
-export default function handler(req, res) {
+module.exports = async function handler(req, res) {
   if (req.method && req.method !== "GET") {
     res.statusCode = 405;
     res.end("Method Not Allowed");
@@ -14,8 +14,8 @@ export default function handler(req, res) {
     return;
   }
 
-  pruneExpired();
-  const providerToken = takeSessionToken(sessionKey);
+  await pruneExpired();
+  const providerToken = await takeSessionToken(sessionKey);
 
   if (!providerToken) {
     res.statusCode = 202;
@@ -27,4 +27,4 @@ export default function handler(req, res) {
   res.statusCode = 200;
   res.setHeader("Content-Type", "application/json");
   res.end(JSON.stringify({ provider_token: providerToken }));
-}
+};

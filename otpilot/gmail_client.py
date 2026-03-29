@@ -22,7 +22,8 @@ from otpilot.config import get_config
 from otpilot.token_store import load_token, save_token
 
 SCOPES: list = ["https://www.googleapis.com/auth/gmail.readonly"]
-DEFAULT_AUTH_BASE_URL = "https://otpilot-git-codex-replace-oauth-fce1ef-codewithjenils-projects.vercel.app"
+# DEFAULT_AUTH_BASE_URL = "https://otpilot-git-codex-replace-oauth-fce1ef-codewithjenils-projects.vercel.app"
+DEFAULT_AUTH_BASE_URL = "https://solid-space-barnacle-9vrvwx4grpfpp76-3000.app.github.dev/"
 OTPILOT_AUTH_BASE_URL = os.getenv("OTPILOT_AUTH_BASE_URL", DEFAULT_AUTH_BASE_URL)
 
 

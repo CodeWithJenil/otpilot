@@ -1,6 +1,6 @@
-import { createSupabaseClient } from "../lib/supabase.js";
+const { createSupabaseClient } = require("../lib/supabase.js");
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   if (req.method && req.method !== "GET") {
     res.statusCode = 405;
     res.end("Method Not Allowed");
@@ -40,4 +40,4 @@ export default async function handler(req, res) {
     res.statusCode = 500;
     res.end(`Unexpected auth error: ${error instanceof Error ? error.message : "Unknown error"}`);
   }
-}
+};
