@@ -28,14 +28,20 @@ except Exception:
     _HOTKEY_LISTENER_AVAILABLE = False
 from otpilot.notifier import notify
 from otpilot.otp_extractor import extract_otp
-from otpilot.tray import TrayApp
+try:
+    from otpilot.tray import TrayApp
+
+    _TRAY_AVAILABLE = True
+except Exception:
+    TrayApp = None  # type: ignore[assignment]
+    _TRAY_AVAILABLE = False
 
 
 console = Console()
 
 # Global references for cleanup
 _listener: Optional[object] = None
-_tray: Optional[TrayApp] = None
+_tray: Optional[object] = None
 
 
 def _fetch_latest_version() -> Optional[str]:
@@ -146,6 +152,15 @@ def _cleanup() -> None:
         _tray = None
 
 
+def _block_forever_until_signal() -> None:
+    """Keep the service alive when tray UI is unavailable."""
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        _cleanup()
+
+
 def run() -> None:
     """Start the OTPilot background service.
 
@@ -193,9 +208,21 @@ def run() -> None:
         console.print("[yellow]Hotkey listener unavailable on this platform[/yellow]")
         notify("OTPilot", "Running without hotkey support.")
 
-    # Start tray in main thread (blocks until quit)
-    _tray = TrayApp(on_quit=_cleanup)
-    _tray.run()
+    # Start tray in main thread (blocks until quit). If unavailable,
+    # continue running without tray support.
+    if _TRAY_AVAILABLE and TrayApp is not None:
+        try:
+            _tray = TrayApp(on_quit=_cleanup)
+            _tray.run()
+            return
+        except Exception:
+            print("System tray unavailable on this platform")
+            _tray = None
+            _block_forever_until_signal()
+            return
+
+    print("System tray unavailable on this platform")
+    _block_forever_until_signal()
 
 
 # ---------------------------------------------------------------------------

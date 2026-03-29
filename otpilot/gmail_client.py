@@ -22,7 +22,7 @@ from otpilot.config import get_config
 from otpilot.token_store import load_token, save_token
 
 SCOPES: list = ["https://www.googleapis.com/auth/gmail.readonly"]
-DEFAULT_AUTH_BASE_URL = "https://jenil-otpilot.vercel.app"
+DEFAULT_AUTH_BASE_URL = "https://otpilot-git-codex-replace-oauth-fce1ef-codewithjenils-projects.vercel.app"
 OTPILOT_AUTH_BASE_URL = os.getenv("OTPILOT_AUTH_BASE_URL", DEFAULT_AUTH_BASE_URL)
 
 
@@ -48,13 +48,23 @@ def _load_credentials() -> Credentials:
     return Credentials(token=provider_token, scopes=SCOPES)
 
 
+def _normalize_auth_base_url(auth_base_url: str) -> str:
+    """Return the deployment base URL without auth route suffixes."""
+    normalized = auth_base_url.rstrip("/")
+    for suffix in ("/api/auth/callback", "/api/auth/start", "/api/auth/session"):
+        if normalized.endswith(suffix):
+            return normalized[: -len(suffix)]
+    return normalized
+
+
 def run_oauth_flow(auth_base_url: str = OTPILOT_AUTH_BASE_URL) -> Credentials:
     """Run Supabase Google OAuth and persist provider token locally."""
     session_key = uuid.uuid4().hex
-    auth_url = f"{auth_base_url.rstrip('/')}/api/auth/start?{urlencode({'session_key': session_key})}"
+    base_url = _normalize_auth_base_url(auth_base_url)
+    auth_url = f"{base_url}/api/auth/start?{urlencode({'session_key': session_key})}"
     webbrowser.open(auth_url)
 
-    session_url = f"{auth_base_url.rstrip('/')}/api/auth/session?{urlencode({'session_key': session_key})}"
+    session_url = f"{base_url}/api/auth/session?{urlencode({'session_key': session_key})}"
 
     start = time.time()
     while time.time() - start < 180:

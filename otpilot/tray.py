@@ -10,7 +10,27 @@ import threading
 from typing import Any, Callable, Optional
 
 from PIL import Image, ImageDraw, ImageFont
-from pystray import Icon, Menu, MenuItem
+
+try:
+    from pystray import Icon, Menu, MenuItem
+
+    _PYSTRAY_AVAILABLE = True
+    _PYSTRAY_IMPORT_ERROR: Optional[Exception] = None
+except ImportError as exc:
+    Icon = Menu = MenuItem = None  # type: ignore[assignment]
+    _PYSTRAY_AVAILABLE = False
+    _PYSTRAY_IMPORT_ERROR = exc
+except Exception as exc:
+    Icon = Menu = MenuItem = None  # type: ignore[assignment]
+    _PYSTRAY_AVAILABLE = False
+    _PYSTRAY_IMPORT_ERROR = exc
+
+
+def _ensure_pystray_available() -> None:
+    if not _PYSTRAY_AVAILABLE:
+        raise RuntimeError(
+            "System tray unavailable on this platform"
+        ) from _PYSTRAY_IMPORT_ERROR
 
 
 def _create_icon_image() -> Image.Image:
@@ -117,8 +137,9 @@ class TrayApp:
     """
 
     def __init__(self, on_quit: Optional[Callable[[], None]] = None) -> None:
+        _ensure_pystray_available()
         self._on_quit = on_quit
-        self._icon: Optional[Icon] = None
+        self._icon: Optional[Any] = None
 
     def _quit_action(self, icon: Any, item: Any) -> None:
         """Handle the Quit menu action."""
@@ -141,6 +162,7 @@ class TrayApp:
         This should be called from the main thread, as ``pystray``
         requires it on macOS.
         """
+        _ensure_pystray_available()
         menu = Menu(
             MenuItem("OTPilot", None, enabled=False),
             Menu.SEPARATOR,
