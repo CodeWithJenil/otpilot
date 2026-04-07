@@ -19,8 +19,10 @@ from rich.prompt import Confirm, Prompt
 from rich.text import Text
 
 from otpilot.config import DEFAULT_CONFIG, config_exists, get_config, save_config, token_exists
+from otpilot.logger import get_logger
 
 console = Console()
+logger = get_logger(__name__)
 
 
 def _print_banner() -> None:
@@ -210,6 +212,7 @@ def run_setup() -> None:
         }
     )
     save_config(config)
+    logger.info("Setup complete.")
 
     console.print()
     console.print(

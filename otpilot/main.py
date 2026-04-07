@@ -18,7 +18,7 @@ import subprocess
 import sys
 import threading
 import time
-from typing import Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import click
 import requests
@@ -28,6 +28,7 @@ from otpilot import __version__
 from otpilot.clipboard import ClipboardError, copy_to_clipboard
 from otpilot.config import config_exists, get_config, token_exists
 from otpilot.gmail_client import GmailAuthError, NotAuthenticatedError, fetch_recent_emails
+from otpilot.logger import LOG_FILE, get_logger
 
 try:
     from otpilot.hotkey_listener import HotkeyListener
@@ -50,6 +51,9 @@ except Exception:
 
 
 console = Console()
+logger = get_logger(__name__)
+
+PID_FILE: str = os.path.expanduser("~/.otpilot/otpilot.pid")
 
 # Global references for cleanup.
 _listener: Optional[object] = None
@@ -125,29 +129,36 @@ def _on_hotkey_triggered() -> None:
     Returns:
         None: This function does not return a value.
     """
+    logger.info("Hotkey trigger received.")
     try:
         emails = fetch_recent_emails()
     except NotAuthenticatedError:
         notify("OTPilot", "Please re-authenticate. Run: otpilot setup")
+        logger.warning("Hotkey fetch failed: not authenticated.")
         return
     except GmailAuthError:
         notify("OTPilot", "Authentication error. Run: otpilot setup")
+        logger.warning("Hotkey fetch failed: Gmail auth error.")
         return
     except Exception as exc:
         notify("OTPilot Error", f"Could not fetch emails: {exc}")
+        logger.exception("Hotkey fetch failed with exception.")
         return
 
     otp = extract_otp(emails)
 
     if otp is None:
         notify("OTPilot", "No OTP found in recent emails.")
+        logger.info("No OTP found in recent emails.")
         return
 
     try:
         copy_to_clipboard(otp)
     except ClipboardError as exc:
         notify("OTPilot Error", str(exc))
+        logger.warning("Clipboard copy failed: %s", exc)
         return
+    logger.info("OTP copied to clipboard.")
 
     config = get_config()
     if config.get("auto_paste", False):
@@ -171,6 +182,15 @@ def _on_hotkey_triggered() -> None:
             masked = otp[:2] + "•" * (len(otp) - 4) + otp[-2:]
         notify("OTPilot", f"OTP copied: {masked}")
 
+    try:
+        from otpilot.history import save_entry
+
+        sender, subject = _find_email_metadata(emails, otp)
+        save_entry(otp, sender=sender, subject=subject)
+        logger.debug("OTP history entry saved.")
+    except Exception:
+        logger.exception("Failed to save OTP history entry.")
+
 
 def _cleanup() -> None:
     """Stop background listeners and tray resources.
@@ -179,6 +199,7 @@ def _cleanup() -> None:
         None: This function does not return a value.
     """
     global _listener, _tray
+    logger.info("OTPilot shutting down.")
     if _listener is not None:
         _listener.stop()
         _listener = None
@@ -198,6 +219,25 @@ def _block_forever_until_signal() -> None:
             time.sleep(1)
     except KeyboardInterrupt:
         _cleanup()
+
+
+def _find_email_metadata(emails: List[Dict[str, Any]], otp: str) -> Tuple[str, str]:
+    """Find sender and subject for the email that contains the OTP.
+
+    Args:
+        emails (list): List of email dictionaries.
+        otp (str): OTP value to match against email content.
+
+    Returns:
+        Tuple[str, str]: ``(sender, subject)`` when a match is found, else empty strings.
+    """
+    for email in emails:
+        subject = str(email.get("subject", ""))
+        body = str(email.get("body", ""))
+        if otp in subject or otp in body:
+            sender = str(email.get("sender", ""))
+            return sender, subject
+    return "", ""
 
 
 def _print_feedback_prompt() -> None:
@@ -228,8 +268,8 @@ def _launch_detached_background() -> subprocess.Popen:
     Returns:
         subprocess.Popen: Handle to the newly launched background process.
     """
-    log_path = os.path.expanduser("~/.otpilot/otpilot.log")
-    pid_path = os.path.expanduser("~/.otpilot/otpilot.pid")
+    log_path = LOG_FILE
+    pid_path = PID_FILE
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
 
     env = os.environ.copy()
@@ -274,6 +314,7 @@ def run() -> None:
         None: Startup errors are handled internally with notifications/logging.
     """
     global _listener, _tray
+    logger.info("OTPilot starting.")
 
     # Force first-run setup when either config or auth token is missing.
     if not config_exists() or not token_exists():
@@ -322,12 +363,12 @@ def run() -> None:
             _tray.run()
             return
         except Exception:
-            print("System tray unavailable on this platform")
+            logger.warning("System tray unavailable on this platform.")
             _tray = None
             _block_forever_until_signal()
             return
 
-    print("System tray unavailable on this platform")
+    logger.warning("System tray unavailable on this platform.")
     _block_forever_until_signal()
 
 
@@ -384,6 +425,39 @@ def start() -> None:
 
     run()
     _print_feedback_prompt()
+
+
+@cli.command()
+def stop() -> None:
+    """Stop the OTPilot background service.
+
+    Returns:
+        None: This command does not return a value.
+
+    Raises:
+        None: Errors are handled and reported to the user.
+    """
+    if not os.path.exists(PID_FILE):
+        click.echo("OTPilot is not running.")
+        return
+
+    try:
+        with open(PID_FILE, "r", encoding="utf-8") as pid_file:
+            pid_str = pid_file.read().strip()
+            pid = int(pid_str)
+    except (OSError, ValueError):
+        click.echo("Could not read PID file. Please remove it manually.")
+        return
+
+    try:
+        os.kill(pid, signal.SIGTERM)
+        click.echo("OTPilot stop signal sent.")
+        os.remove(PID_FILE)
+    except ProcessLookupError:
+        os.remove(PID_FILE)
+        click.echo("No running OTPilot process found. Removed stale PID file.")
+    except PermissionError:
+        click.echo("Permission denied while trying to stop OTPilot.")
 
 
 @cli.command()
@@ -498,6 +572,99 @@ def version() -> None:
     """
     click.echo(f"OTPilot v{__version__}")
     _print_feedback_prompt()
+
+
+@cli.command()
+@click.option("--clear", is_flag=True, help="Clear stored OTP history.")
+@click.option("--count", type=int, default=None, help="Number of entries to show.")
+def history(clear: bool, count: Optional[int]) -> None:
+    """Display or clear OTP history entries.
+
+    Args:
+        clear (bool): Whether to clear the stored history.
+        count (Optional[int]): Optional maximum number of entries to show.
+
+    Returns:
+        None: This command does not return a value.
+    """
+    from rich.table import Table
+
+    from otpilot.history import clear_history, load_history
+
+    if clear:
+        if click.confirm("Clear OTP history?", default=False):
+            clear_history()
+            click.echo("OTP history cleared.")
+        return
+
+    entries = load_history()
+    if count is not None:
+        entries = entries[: max(0, count)]
+
+    if not entries:
+        click.echo("No OTP history available.")
+        return
+
+    table = Table(title="OTP History", show_lines=False)
+    table.add_column("Time", style="dim")
+    table.add_column("OTP")
+    table.add_column("Sender")
+    table.add_column("Subject")
+
+    for entry in entries:
+        table.add_row(
+            str(entry.get("timestamp", "")),
+            str(entry.get("otp", "")),
+            str(entry.get("sender", "")),
+            str(entry.get("subject", "")),
+        )
+
+    console.print(table)
+
+
+@cli.command()
+@click.option("--lines", default=50)
+def logs(lines: int) -> None:
+    """Show the most recent log lines.
+
+    Args:
+        lines (int): Number of log lines to display.
+
+    Returns:
+        None: This command does not return a value.
+    """
+    if not os.path.exists(LOG_FILE):
+        click.echo("No logs found.")
+        return
+    try:
+        if os.path.getsize(LOG_FILE) == 0:
+            click.echo("No logs found.")
+            return
+    except OSError:
+        click.echo("Unable to read log file.")
+        return
+
+    if sys.platform.startswith("win"):
+        try:
+            with open(LOG_FILE, "r", encoding="utf-8") as log_file:
+                content_lines = log_file.readlines()
+        except OSError:
+            click.echo("Unable to read log file.")
+            return
+        tail_lines = content_lines[-lines:] if lines > 0 else []
+        click.echo("".join(tail_lines), nl=False)
+        return
+
+    result = subprocess.run(
+        ["tail", "-n", str(lines), LOG_FILE],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        click.echo("Unable to read log file.")
+        return
+    click.echo(result.stdout, nl=False)
 
 
 @cli.command()

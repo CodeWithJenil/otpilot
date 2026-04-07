@@ -28,6 +28,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "notify_on_copy": True,
     "otp_max_age_minutes": 10,
     "email_fetch_count": 10,
+    "otp_history_count": 10,
     "auto_paste": False,
     "auto_start_on_boot": False,
     "notification_sound": False,
@@ -143,8 +144,25 @@ def get_value(key: str, default: Optional[Any] = None) -> Any:
         OSError: If loading configuration from disk fails unexpectedly.
         TypeError: If defaults must be rewritten and serialization fails.
     """
-    config = get_config()
-    return config.get(key, default)
+    _ensure_config_dir()
+
+    stored_config: Dict[str, Any] = {}
+    if not CONFIG_FILE.exists():
+        save_config(DEFAULT_CONFIG)
+    else:
+        try:
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                loaded = json.load(f)
+                if isinstance(loaded, dict):
+                    stored_config = loaded
+        except (json.JSONDecodeError, OSError):
+            save_config(DEFAULT_CONFIG)
+
+    if key in stored_config:
+        return stored_config[key]
+    if default is not None:
+        return default
+    return DEFAULT_CONFIG.get(key)
 
 
 def set_value(key: str, value: Any) -> None:

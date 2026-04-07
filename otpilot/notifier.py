@@ -8,8 +8,11 @@ Key exports:
     notify: Cross-platform notification entry point.
 """
 
+import shutil
 import subprocess
 import sys
+
+from otpilot.config import get_config
 
 
 def _notify_macos(title: str, message: str) -> None:
@@ -51,6 +54,43 @@ def _notify_plyer(title: str, message: str) -> None:
     )
 
 
+def _play_notification_sound() -> None:
+    """Play a best-effort notification sound based on platform availability."""
+    try:
+        from plyer import audio
+
+        if hasattr(audio, "play"):
+            audio.play()
+            return
+    except Exception:
+        pass
+
+    try:
+        if sys.platform == "darwin":
+            subprocess.Popen(
+                ["afplay", "/System/Library/Sounds/Ping.aiff"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return
+        if sys.platform == "win32":
+            import winsound
+
+            winsound.MessageBeep()
+            return
+        if sys.platform.startswith("linux"):
+            for player in ("paplay", "aplay"):
+                if shutil.which(player):
+                    subprocess.Popen(
+                        [player, "/usr/share/sounds/freedesktop/stereo/complete.oga"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    return
+    except Exception:
+        pass
+
+
 def notify(title: str, message: str) -> None:
     """Display a desktop notification using platform-appropriate backend.
 
@@ -69,6 +109,8 @@ def notify(title: str, message: str) -> None:
             _notify_macos(title, message)
         else:
             _notify_plyer(title, message)
+        if get_config().get("notification_sound", False):
+            _play_notification_sound()
     except Exception:
         # Notifications are non-critical; never let failures break main flow.
         pass

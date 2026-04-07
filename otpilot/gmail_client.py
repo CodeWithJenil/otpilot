@@ -17,16 +17,18 @@ import re
 import time
 import uuid
 import webbrowser
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, TypeVar
 from urllib.parse import urlencode
 
 import requests
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 
-from otpilot.config import get_config
+from otpilot.config import CONFIG_DIR, get_config
+from otpilot.logger import get_logger
 from otpilot.token_store import load_token, save_token
 
 SCOPES: list = ["https://www.googleapis.com/auth/gmail.readonly"]
@@ -34,6 +36,10 @@ SCOPES: list = ["https://www.googleapis.com/auth/gmail.readonly"]
 # DEFAULT_AUTH_BASE_URL = "https://solid-space-barnacle-9vrvwx4grpfpp76-3000.app.github.dev/"
 DEFAULT_AUTH_BASE_URL = "https://jenil-otpilot.vercel.app"
 OTPILOT_AUTH_BASE_URL = os.getenv("OTPILOT_AUTH_BASE_URL", DEFAULT_AUTH_BASE_URL)
+
+logger = get_logger(__name__)
+
+T = TypeVar("T")
 
 
 class NotAuthenticatedError(Exception):
@@ -100,11 +106,116 @@ def _load_credentials() -> Credentials:
     if not token_payload:
         raise NotAuthenticatedError()
 
-    provider_token = token_payload.get("access_token")
-    if not provider_token or not isinstance(provider_token, str):
+    creds = _build_credentials(token_payload)
+    creds = _refresh_if_expired(creds)
+    return creds
+
+
+def _build_credentials(token_payload: Dict[str, Any]) -> Credentials:
+    """Build Google OAuth2 Credentials from a stored token payload.
+
+    Constructs a Credentials object with refresh capability when a
+    refresh_token is present. Falls back to access-token-only credentials
+    when no refresh token is available (legacy payloads).
+
+    Args:
+        token_payload (Dict[str, Any]): Stored token dict with keys:
+            access_token (str): Current Google access token.
+            refresh_token (str, optional): Google refresh token.
+            expires_at (int, optional): Unix timestamp of token expiry.
+
+    Returns:
+        Credentials: google.oauth2.credentials.Credentials instance.
+
+    Raises:
+        GmailAuthError: If access_token is missing or invalid.
+    """
+    access_token = token_payload.get("access_token")
+    if not access_token or not isinstance(access_token, str):
         raise GmailAuthError("Invalid stored token. Run `otpilot setup` to sign in again.")
 
-    return Credentials(token=provider_token, scopes=SCOPES)
+    refresh_token = token_payload.get("refresh_token")
+    expires_at = token_payload.get("expires_at")
+
+    expiry = None
+    if expires_at:
+        expiry = datetime.fromtimestamp(int(expires_at), tz=timezone.utc)
+
+    client_id = None
+    client_secret = None
+    token_uri = "https://oauth2.googleapis.com/token"
+
+    creds_path = CONFIG_DIR / "credentials.json"
+    if creds_path.exists():
+        try:
+            import json as _json
+
+            raw = _json.loads(creds_path.read_text(encoding="utf-8"))
+            installed = raw.get("installed") or raw.get("web") or {}
+            client_id = installed.get("client_id")
+            client_secret = installed.get("client_secret")
+            token_uri = installed.get("token_uri", token_uri)
+        except Exception:
+            pass
+
+    return Credentials(
+        token=access_token,
+        refresh_token=refresh_token,
+        token_uri=token_uri,
+        client_id=client_id,
+        client_secret=client_secret,
+        scopes=SCOPES,
+        expiry=expiry,
+    )
+
+
+def _refresh_if_expired(creds: Credentials) -> Credentials:
+    """Refresh credentials if expired or within 5 minutes of expiry.
+
+    Attempts a silent token refresh using google-auth's request transport.
+    On success, persists the new access token and updated expiry to storage.
+    On failure, raises GmailAuthError so the caller can surface a clean
+    re-authentication prompt.
+
+    Args:
+        creds (Credentials): Google OAuth2 credentials to check and refresh.
+
+    Returns:
+        Credentials: Refreshed (or still-valid) credentials.
+
+    Raises:
+        GmailAuthError: If refresh fails or credentials have no refresh token.
+    """
+    now = datetime.now(timezone.utc)
+    expiry = getattr(creds, "expiry", None)
+    is_expired = (expiry is None) or (expiry - now < timedelta(minutes=5))
+
+    if not is_expired:
+        return creds
+
+    if not creds.refresh_token:
+        raise GmailAuthError(
+            "Access token expired and no refresh token is stored. "
+            "Run `otpilot setup` to re-authenticate."
+        )
+
+    try:
+        import google.auth.transport.requests as google_requests
+
+        request = google_requests.Request()
+        creds.refresh(request)
+    except Exception as exc:
+        raise GmailAuthError(
+            f"Token refresh failed: {exc}. Run `otpilot setup` to re-authenticate."
+        ) from exc
+
+    token_payload = load_token() or {}
+    token_payload["access_token"] = creds.token
+    if creds.expiry:
+        token_payload["expires_at"] = int(creds.expiry.timestamp())
+    save_token(token_payload)
+
+    return creds
 
 
 def _normalize_auth_base_url(auth_base_url: str) -> str:
@@ -157,11 +268,25 @@ def run_oauth_flow(auth_base_url: str = OTPILOT_AUTH_BASE_URL) -> Credentials:
 
         payload = response.json()
         provider_token = payload.get("provider_token")
+        refresh_token = payload.get("provider_refresh_token") or payload.get("refresh_token")
+        expires_in = payload.get("expires_in")
+        expires_at = payload.get("expires_at")
         if not provider_token:
             raise GmailAuthError("No provider token returned from auth session.")
 
-        save_token({"access_token": provider_token, "retrieved_at": int(time.time())})
-        return Credentials(token=provider_token, scopes=SCOPES)
+        token_data = {
+            "access_token": provider_token,
+            "retrieved_at": int(time.time()),
+        }
+        if refresh_token:
+            token_data["refresh_token"] = refresh_token
+        if expires_at:
+            token_data["expires_at"] = int(expires_at)
+        elif expires_in:
+            token_data["expires_at"] = int(time.time()) + int(expires_in)
+
+        save_token(token_data)
+        return _build_credentials(token_data)
 
     raise GmailAuthError("Authentication timed out. Please try again.")
 
@@ -247,6 +372,49 @@ def _strip_html(html: str) -> str:
     return clean.strip()
 
 
+def _with_retry(fn: Callable[[], T], max_attempts: int = 3, base_delay: float = 1.0) -> T:
+    """Run ``fn`` with retry and exponential backoff.
+
+    Args:
+        fn: Callable to execute.
+        max_attempts (int): Maximum number of attempts before giving up.
+        base_delay (float): Base delay in seconds for backoff calculation.
+
+    Returns:
+        T: The return value of ``fn`` when successful.
+
+    Raises:
+        Exception: Re-raises the last encountered exception.
+    """
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            logger.debug("Gmail fetch attempt %s/%s", attempt, max_attempts)
+            return fn()
+        except HttpError as exc:
+            status = getattr(getattr(exc, "resp", None), "status", None)
+            if status in (401, 403):
+                logger.error("Gmail auth error (status %s).", status, exc_info=exc)
+                raise
+            retryable_statuses = {429, 500, 502, 503, 504}
+            if status in retryable_statuses and attempt < max_attempts:
+                delay = base_delay * (2 ** (attempt - 1))
+                logger.warning("Gmail fetch failed (%s). Retrying in %.1fs.", status, delay)
+                time.sleep(delay)
+                continue
+            logger.error("Gmail fetch failed (status %s).", status, exc_info=exc)
+            raise
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as exc:
+            if attempt < max_attempts:
+                delay = base_delay * (2 ** (attempt - 1))
+                logger.warning("Network error during Gmail fetch. Retrying in %.1fs.", delay)
+                time.sleep(delay)
+                continue
+            logger.error("Network error during Gmail fetch.", exc_info=exc)
+            raise
+
+
 def fetch_recent_emails(n: Optional[int] = None) -> List[Dict[str, Any]]:
     """Fetch recent inbox emails formatted for OTP extraction.
 
@@ -271,42 +439,60 @@ def fetch_recent_emails(n: Optional[int] = None) -> List[Dict[str, Any]]:
     # Enforce freshness cutoff so stale OTP emails are ignored.
     max_age_minutes: int = config.get("otp_max_age_minutes", 10)
 
-    creds = _load_credentials()
-    service = build("gmail", "v1", credentials=creds, cache_discovery=False)
+    def _fetch() -> List[Dict[str, Any]]:
+        creds = _load_credentials()
+        service = build("gmail", "v1", credentials=creds, cache_discovery=False)
 
-    # Query the most recent inbox messages from the Gmail REST API.
-    results = service.users().messages().list(userId="me", maxResults=n, labelIds=["INBOX"]).execute()
-    messages = results.get("messages", [])
-    if not messages:
-        return []
-
-    emails: List[Dict[str, Any]] = []
-    now = datetime.now(timezone.utc)
-
-    for msg_meta in messages:
-        msg = service.users().messages().get(userId="me", id=msg_meta["id"], format="full").execute()
-        payload = msg.get("payload", {})
-        headers = payload.get("headers", [])
-
-        subject = _get_header(headers, "Subject")
-        sender = _get_header(headers, "From")
-        timestamp = _parse_timestamp(headers)
-
-        if timestamp:
-            age_minutes = (now - timestamp).total_seconds() / 60
-            if age_minutes > max_age_minutes:
-                continue
-
-        body = _decode_body(payload) or msg.get("snippet", "")
-        body = _strip_html(body)
-
-        emails.append(
-            {
-                "subject": subject,
-                "body": body,
-                "timestamp": timestamp.isoformat() if timestamp else "",
-                "sender": sender,
-            }
+        # Query the most recent inbox messages from the Gmail REST API.
+        results = (
+            service.users()
+            .messages()
+            .list(userId="me", maxResults=n, labelIds=["INBOX"])
+            .execute()
         )
+        messages = results.get("messages", [])
+        if not messages:
+            return []
 
-    return emails
+        emails: List[Dict[str, Any]] = []
+        now = datetime.now(timezone.utc)
+
+        for msg_meta in messages:
+            msg = (
+                service.users()
+                .messages()
+                .get(userId="me", id=msg_meta["id"], format="full")
+                .execute()
+            )
+            payload = msg.get("payload", {})
+            headers = payload.get("headers", [])
+
+            subject = _get_header(headers, "Subject")
+            sender = _get_header(headers, "From")
+            timestamp = _parse_timestamp(headers)
+
+            if timestamp:
+                age_minutes = (now - timestamp).total_seconds() / 60
+                if age_minutes > max_age_minutes:
+                    continue
+
+            body = _decode_body(payload) or msg.get("snippet", "")
+            body = _strip_html(body)
+
+            emails.append(
+                {
+                    "subject": subject,
+                    "body": body,
+                    "timestamp": timestamp.isoformat() if timestamp else "",
+                    "sender": sender,
+                }
+            )
+
+        return emails
+
+    logger.debug("Fetching recent emails (limit=%s).", n)
+    try:
+        return _with_retry(_fetch)
+    except Exception:
+        logger.exception("Failed to fetch recent emails.")
+        raise

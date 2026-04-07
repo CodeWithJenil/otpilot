@@ -48,6 +48,7 @@ This grants read-only Gmail access. OTPilot cannot send, delete, or modify your 
 OTPilot stores runtime state locally at:
 
 - `~/.otpilot/config.json`
+- `~/.otpilot/history.json`
 - Token storage: system keyring when available (`service=otpilot`), with fallback to `~/.otpilot/token.json`
 
 You can remove local state by deleting these files and revoking Google access.

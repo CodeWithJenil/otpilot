@@ -8,7 +8,7 @@ dynamic = ["version"]
 description = "Background CLI utility that copies OTPs from Gmail to clipboard on hotkey trigger"
 readme = "docs/README.md"
 license = {file = "LICENSE"}
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 authors = [
     {name = "Jenil", email = "mail2jenil.pokar19@gmail.com"},
 ]
@@ -19,15 +19,17 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Communications :: Email",
     "Topic :: Utilities",
 ]
 dependencies = [
+    "requests>=2.31.0",
+    "packaging>=23.0",
     "google-api-python-client>=2.100.0",
     "google-auth>=2.23.0",
     "pynput>=1.7.6",

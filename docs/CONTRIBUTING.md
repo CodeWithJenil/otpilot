@@ -35,7 +35,7 @@ pip install -r requirements.txt
 
 ```bash
 otpilot version
-# -> OTPilot v2.1.0
+# -> OTPilot v2.3.0
 ```
 
 ---
@@ -54,7 +54,9 @@ otpilot/
 ├── notifier.py           # Desktop notifications
 ├── clipboard.py          # Clipboard operations (pyperclip)
 ├── config.py             # Configuration management
-└── token_store.py        # Keyring-first token persistence
+├── token_store.py        # Keyring-first token persistence
+├── history.py            # OTP history storage
+└── logger.py             # Rotating file logger
 ```
 
 ---

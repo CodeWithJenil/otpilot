@@ -13,9 +13,9 @@ pip install otpilot
 **What you see:**
 ```
 Collecting otpilot
-  Downloading otpilot-2.1.0-py3-none-any.whl
+  Downloading otpilot-2.3.0-py3-none-any.whl
 Installing collected packages: otpilot
-Successfully installed otpilot-2.1.0
+Successfully installed otpilot-2.3.0
 ```
 
 > **Linux users**: Also install clipboard support:
@@ -40,15 +40,15 @@ otpilot setup
 ╰──────────────────────────────────────╯
 ```
 
-### Step 2b: Google Sign-In (Supabase)
+### Step 2b: Google Sign-In
 
 ```
-Step 1: Google Account Sign-In via Supabase
+Step 1: Google Account Sign-In
   Opening your browser for Gmail authorization...
 ```
 
 **What happens:**
-- Your default browser opens to the Supabase-backed Google sign-in page
+- Your default browser opens to the Google sign-in page
 - You select your Gmail account and click "Allow"
 - Back in terminal:
 
@@ -157,6 +157,12 @@ While running, OTPilot lives in your system tray / menu bar:
 | **Settings**       | Opens a terminal to re-run `otpilot setup`    |
 | **Re-authenticate**| Re-runs the OAuth flow                         |
 | **Quit**           | Stops OTPilot                                  |
+
+### CLI Reference
+
+| Command        | Purpose                                  |
+| -------------- | ---------------------------------------- |
+| `otpilot stop` | Stop the background process and clean PID |
 
 ---
 

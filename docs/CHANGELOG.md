@@ -7,6 +7,24 @@ and this project adheres to Semantic Versioning (https://semver.org/spec/v2.0.0.
 
 ---
 
+## [2.3.0] — 2026-04-07
+
+### Added
+- OTP history with CLI listing and clearing
+- Notification sound toggle
+- Retry logic with exponential backoff for Gmail fetches
+- Rotating logs at `~/.otpilot/otpilot.log`
+- `otpilot stop`
+- `otpilot logs`
+
+### Changed
+- Authentication now stores refresh tokens and expiry for silent refresh.
+- Added `otp_history_count` config key.
+- Minimum supported Python is now 3.10.
+
+### Breaking
+- Existing users must re-authenticate once to populate refresh token metadata.
+
 ## [2.1.0] — 2026-03-28
 
 ### Added
