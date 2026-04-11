@@ -110,7 +110,7 @@ const Auth = () => {
   }
 
   return (
-    <main className="min-h-screen bg-background text-foreground flex items-center justify-center px-6">
+    <main className="cursor-default min-h-screen bg-background text-foreground flex items-center justify-center px-6">
       <div className="max-w-md w-full rounded-lg border border-border bg-card p-6 space-y-4">
         <h1 className="text-xl font-semibold">Sign in with Google</h1>
         <p className="text-sm text-muted-foreground">

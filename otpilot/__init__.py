@@ -10,5 +10,5 @@ Key exports:
     __app_name__: Human-readable application name.
 """
 
-__version__ = "2.3.0"
+__version__ = "2.3.2"
 __app_name__ = "OTPilot"

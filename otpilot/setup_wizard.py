@@ -9,6 +9,7 @@ Key exports:
     run_setup: Execute the full interactive setup sequence.
 """
 
+import imaplib
 import subprocess
 import sys
 from pathlib import Path
@@ -18,7 +19,7 @@ from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.text import Text
 
-from otpilot.config import DEFAULT_CONFIG, config_exists, get_config, save_config, token_exists
+from otpilot.config import DEFAULT_CONFIG, config_exists, get_config, save_config, set_value, token_exists
 from otpilot.logger import get_logger
 
 console = Console()
@@ -48,7 +49,7 @@ def _setup_auth() -> bool:
         bool: ``True`` when authentication succeeds or existing token is kept,
             otherwise ``False``.
     """
-    console.print("[bold cyan]Step 1:[/bold cyan] Google Account Sign-In via Supabase\n")
+    console.print("[bold cyan]Step 1:[/bold cyan] Authentication Mode\n")
 
     if token_exists():
         console.print("  [dim]An authentication token is already stored.[/dim]")
@@ -58,12 +59,126 @@ def _setup_auth() -> bool:
             console.print("  [green]✓[/green] Using existing token.\n")
             return True
 
-    from otpilot.gmail_client import run_oauth_flow
+    console.print("  [1] Firebase Auth — Sign in via browser (hosted Firebase web app). Recommended.")
+    console.print("  [2] My own credentials.json — Use your own Google Cloud OAuth client. Full control.")
+    console.print("  [3] Gmail App Password — No OAuth. Use a Gmail App Password with IMAP.\n")
 
-    console.print("  Opening your browser for Gmail authorization...\n")
+    choice = Prompt.ask("  Select mode", choices=["1", "2", "3"], default="1", console=console)
+    mode_map = {"1": "firebase", "2": "credentials", "3": "imap"}
+    auth_mode = mode_map[choice]
+    set_value("auth_mode", auth_mode)
+
+    from otpilot.gmail_client import run_oauth_flow_credentials, run_oauth_flow_firebase
+    from otpilot.token_store import save_app_password
+
     try:
-        run_oauth_flow()
-        console.print("  [green]✓[/green] Authentication successful!\n")
+        if auth_mode == "firebase":
+            config = get_config()
+            firebase_web_url = str(config.get("firebase_web_url", "")).strip()
+            if not firebase_web_url:
+                console.print(
+                    "  [dim]Enter the URL of your Firebase-hosted auth page (must perform Google sign-in and redirect).[/dim]"
+                )
+                firebase_web_url = Prompt.ask("  Firebase auth page URL", console=console).strip()
+                set_value("firebase_web_url", firebase_web_url)
+            console.print("  Opening your browser for Gmail authorization...\n")
+            run_oauth_flow_firebase(firebase_web_url=firebase_web_url)
+        elif auth_mode == "credentials":
+            console.print("[bold cyan]Step 1 of 3:[/bold cyan] Create a Google Cloud Project & OAuth Client\n")
+            console.print("  1. Go to [dim]console.cloud.google.com[/dim]")
+            console.print("  2. Click the project dropdown (top left) → [bold]New Project[/bold]")
+            console.print("     Name it anything (e.g. \"OTPilot\") → [bold]Create[/bold]")
+            console.print("  3. Go to APIs & Services → Library")
+            console.print("     Search \"Gmail API\" → click it → [bold]Enable[/bold]")
+            console.print("  4. Go to APIs & Services → OAuth consent screen")
+            console.print("     - Choose [bold]External[/bold] → [bold]Create[/bold]")
+            console.print("     - App name: OTPilot")
+            console.print("     - User support email: your Gmail")
+            console.print("     - Developer contact: your Gmail")
+            console.print("     → [bold]Save and Continue[/bold]")
+            console.print("  5. On the Scopes step → Add or Remove Scopes")
+            console.print("     Search \"gmail.readonly\" → check it → [bold]Update[/bold]")
+            console.print("     → [bold]Save and Continue[/bold]")
+            console.print("  6. On Test users → Add Users → add your Gmail address")
+            console.print("     → [bold]Save and Continue[/bold] → Back to Dashboard")
+            console.print("  7. Go to APIs & Services → Credentials")
+            console.print("     → [bold]Create Credentials[/bold] → [bold]OAuth client ID[/bold]")
+            console.print("     - Application type: Desktop app")
+            console.print("     - Name: OTPilot CLI")
+            console.print("     → [bold]Create[/bold]")
+            console.print("  8. Click the download icon (⬇) next to the new client")
+            console.print("     Rename the downloaded file to: [bold]credentials.json[/bold]")
+            console.print("     Move it to: [bold]~/.otpilot/credentials.json[/bold]\n")
+            console.print("     On macOS/Linux:")
+            console.print("       [dim]mv ~/Downloads/client_secret_*.json ~/.otpilot/credentials.json[/dim]\n")
+            console.print("     On Windows:")
+            console.print(
+                "       [dim]move %USERPROFILE%\\Downloads\\client_secret_*.json %USERPROFILE%\\.otpilot\\credentials.json[/dim]\n"
+            )
+
+            creds_path = Path.home() / ".otpilot" / "credentials.json"
+            while True:
+                Confirm.ask("  I've placed credentials.json at ~/.otpilot/credentials.json", console=console)
+                if creds_path.exists():
+                    break
+                console.print("  [red]✗[/red] File not found at ~/.otpilot/credentials.json")
+                console.print("  Double-check the path and try again.\n")
+
+            console.print("  [green]✓[/green] credentials.json found.")
+            console.print("  Opening browser for Google sign-in...")
+            console.print("  [dim]Complete the sign-in in your browser. The tab will close automatically.[/dim]")
+            run_oauth_flow_credentials()
+        else:
+            console.print("Enable IMAP & Create an App Password")
+            console.print("  1. Open Gmail in your browser")
+            console.print("  2. Click the gear icon (top right) → See all settings")
+            console.print("  3. Go to the Forwarding and POP/IMAP tab")
+            console.print("  4. Under IMAP access → select Enable IMAP → Save Changes\n")
+            console.print("  5. Go to [dim]myaccount.google.com/security[/dim]")
+            console.print("  6. Under \"How you sign in to Google\" → 2-Step Verification")
+            console.print("     Enable it if not already on (required for App Passwords)\n")
+            console.print("  7. Go to [dim]myaccount.google.com/apppasswords[/dim]")
+            console.print("     [dim](If you don't see App Passwords, 2-Step Verification is not enabled)[/dim]")
+            console.print("  8. In the \"App name\" field type: OTPilot → click Create")
+            console.print("  9. Google shows a 16-character password — copy it now")
+            console.print("     [dim]You won't be able to see it again after closing the dialog[/dim]\n")
+
+            config = get_config()
+            while True:
+                imap_user = Prompt.ask("  Enter your Gmail address", console=console).strip()
+                while True:
+                    app_password = Prompt.ask("  Paste your App Password (16 characters)", password=True, console=console)
+                    normalized_password = app_password.replace(" ", "")
+                    if len(normalized_password) == 16:
+                        break
+                    console.print(
+                        "  [red]✗[/red] App Passwords are exactly 16 characters. Please check and try again."
+                    )
+
+                console.print("  Testing IMAP connection...")
+                try:
+                    mail = imaplib.IMAP4_SSL(
+                        config.get("imap_host", "imap.gmail.com"), config.get("imap_port", 993)
+                    )
+                    mail.login(imap_user, normalized_password)
+                    mail.logout()
+                except imaplib.IMAP4.error:
+                    console.print("  [red]✗[/red] IMAP login failed. Common reasons:")
+                    console.print("    - IMAP is not enabled in Gmail settings (check Step 3 above)")
+                    console.print(
+                        "    - The App Password is incorrect (re-generate one at [dim]myaccount.google.com/apppasswords[/dim])"
+                    )
+                    console.print("    - 2-Step Verification is not fully enabled")
+                    if Confirm.ask("  Try again?", console=console):
+                        continue
+                    return False
+
+                console.print("  [green]✓[/green] IMAP connection successful.")
+                set_value("imap_user", imap_user)
+                save_app_password(normalized_password)
+                break
+
+        console.print("  [green]✓[/green] Authentication setup successful!\n")
         return True
     except Exception as exc:
         console.print(f"  [red]✗[/red] Authentication failed: {exc}\n")

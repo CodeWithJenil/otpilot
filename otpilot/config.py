@@ -24,6 +24,7 @@ TOKEN_FILE: Path = CONFIG_DIR / "token.json"
 
 # Default configuration values used for first run and missing keys.
 DEFAULT_CONFIG: Dict[str, Any] = {
+    "auth_mode": "firebase",
     "hotkey": "ctrl+shift+o",
     "notify_on_copy": True,
     "otp_max_age_minutes": 10,
@@ -36,6 +37,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "check_updates_on_start": True,
     "theme": "default",
     "setup_complete": False,
+    "imap_user": "",
+    "imap_host": "imap.gmail.com",
+    "imap_port": 993,
 }
 
 
