@@ -192,6 +192,7 @@ Use this when you prefer no OAuth flow inside OTPilot.
 | `otpilot history --clear`| Clear OTP history                           |
 | `otpilot logs`           | Tail the OTPilot log file                   |
 | `otpilot status`         | Show auth state, hotkey, and config         |
+| `otpilot doctor`         | Run diagnostics to validate environment     |
 | `otpilot hotkey`         | View or reconfigure the global hotkey       |
 | `otpilot logout`         | Clear stored auth token                     |
 | `otpilot update`         | Check PyPI for updates and upgrade          |

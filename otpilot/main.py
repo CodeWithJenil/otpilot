@@ -11,9 +11,11 @@ Key exports:
     main: Console script entry point.
 """
 
+import imaplib
 import os
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import threading
@@ -26,7 +28,7 @@ from rich.console import Console
 
 from otpilot import __version__
 from otpilot.clipboard import ClipboardError, copy_to_clipboard
-from otpilot.config import config_exists, get_config, token_exists
+from otpilot.config import CONFIG_FILE, config_exists, get_config, get_value, token_exists
 from otpilot.gmail_client import GmailAuthError, NotAuthenticatedError, get_fetch_function
 from otpilot.logger import LOG_FILE, get_logger
 
@@ -514,6 +516,266 @@ def status() -> None:
 
     if not authenticated or not has_config:
         console.print("  [dim]Run [bold]otpilot setup[/bold] to get started.[/dim]\n")
+    _print_feedback_prompt()
+
+
+@cli.command()
+def doctor() -> None:
+    """Run diagnostic checks to validate OTPilot environment health.
+
+    Returns:
+        None: This command does not return a value.
+    """
+    from otpilot.token_store import load_app_password, load_token
+
+    console.print("[bold]OTPilot Doctor[/bold]")
+    console.print("Running diagnostics...")
+
+    passed = 0
+    warnings = 0
+    failed = 0
+
+    auth_mode: Optional[str] = None
+    gmail_reachable: Optional[bool] = None
+    imap_reachable: Optional[bool] = None
+
+    try:
+        version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+        if sys.version_info >= (3, 10):
+            console.print(f"[green]✓[/green] Python {version} — OK")
+            passed += 1
+        else:
+            console.print(f"[red]✗[/red] Python {version} — OTPilot requires 3.10+")
+            failed += 1
+    except Exception as exc:
+        console.print(f"[red]✗[/red] Python version: unexpected error — {exc}")
+        failed += 1
+
+    try:
+        if config_exists():
+            console.print(f"[green]✓[/green] Config file found at {CONFIG_FILE}")
+            passed += 1
+        else:
+            console.print("[red]✗[/red] Config file missing — run [bold]otpilot setup[/bold]")
+            failed += 1
+    except Exception as exc:
+        console.print(f"[red]✗[/red] Config file exists: unexpected error — {exc}")
+        failed += 1
+
+    try:
+        auth_mode = get_value("auth_mode")
+        console.print(f"[green]✓[/green] Auth mode: {auth_mode}")
+        passed += 1
+    except Exception as exc:
+        console.print(f"[red]✗[/red] Auth mode: unexpected error — {exc}")
+        failed += 1
+
+    try:
+        if token_exists():
+            console.print("[green]✓[/green] Credential stored")
+            passed += 1
+        else:
+            console.print("[red]✗[/red] No credential found — run [bold]otpilot setup[/bold]")
+            failed += 1
+    except Exception as exc:
+        console.print(f"[red]✗[/red] Token stored: unexpected error — {exc}")
+        failed += 1
+
+    if auth_mode in {"firebase", "credentials"}:
+        try:
+            token_payload = load_token() or {}
+            expires_at = token_payload.get("expires_at")
+            if not expires_at:
+                console.print(
+                    "[yellow]⚠[/yellow]  Token expiry unknown — no expires_at stored"
+                )
+                warnings += 1
+            else:
+                now = time.time()
+                expires_at_int = int(expires_at)
+                delta = expires_at_int - now
+                if delta < 0:
+                    minutes_ago = int((abs(delta) + 59) // 60)
+                    console.print(
+                        "[red]✗[/red] Token expired "
+                        f"{minutes_ago} minutes ago — run [bold]otpilot fetch[/bold] "
+                        "to trigger silent refresh or [bold]otpilot setup[/bold] to re-authenticate"
+                    )
+                    failed += 1
+                elif delta <= 5 * 60:
+                    minutes_left = int((delta + 59) // 60)
+                    console.print(
+                        "[yellow]⚠[/yellow]  Token expires in "
+                        f"{minutes_left} minutes — will auto-refresh on next fetch"
+                    )
+                    warnings += 1
+                else:
+                    minutes_left = int((delta + 59) // 60)
+                    console.print(f"[green]✓[/green] Token valid — expires in {minutes_left} minutes")
+                    passed += 1
+        except Exception as exc:
+            console.print(f"[red]✗[/red] Token expiry: unexpected error — {exc}")
+            failed += 1
+
+        try:
+            token_payload = load_token() or {}
+            refresh_token = str(token_payload.get("refresh_token", "")).strip()
+            if refresh_token:
+                console.print("[green]✓[/green] Refresh token stored — silent renewal enabled")
+                passed += 1
+            else:
+                console.print(
+                    "[red]✗[/red] No refresh token — token cannot be silently renewed. "
+                    "Re-run [bold]otpilot setup[/bold] to fix this"
+                )
+                failed += 1
+        except Exception as exc:
+            console.print(f"[red]✗[/red] Refresh token present: unexpected error — {exc}")
+            failed += 1
+
+        try:
+            requests.get("https://gmail.googleapis.com", timeout=5)
+            console.print("[green]✓[/green] Gmail API reachable")
+            passed += 1
+            gmail_reachable = True
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+            console.print("[red]✗[/red] Gmail API unreachable — check your internet connection")
+            failed += 1
+            gmail_reachable = False
+        except Exception as exc:
+            console.print(f"[red]✗[/red] Gmail API reachability: unexpected error — {exc}")
+            failed += 1
+
+    if auth_mode == "imap":
+        host = ""
+        port = 993
+        try:
+            host = str(get_value("imap_host", ""))
+            port = int(get_value("imap_port", 993) or 993)
+            _ = get_value("imap_user", "")
+            previous_timeout = socket.getdefaulttimeout()
+            socket.setdefaulttimeout(5)
+            client: Optional[imaplib.IMAP4_SSL] = None
+            try:
+                client = imaplib.IMAP4_SSL(host, port)
+                console.print(f"[green]✓[/green] IMAP server {host}:{port} reachable")
+                passed += 1
+                imap_reachable = True
+            finally:
+                if client is not None:
+                    try:
+                        client.logout()
+                    except Exception:
+                        pass
+                socket.setdefaulttimeout(previous_timeout)
+        except (OSError, socket.timeout, imaplib.IMAP4.error):
+            console.print(
+                f"[red]✗[/red] IMAP server {host}:{port} unreachable — check your internet connection or imap settings"
+            )
+            failed += 1
+            imap_reachable = False
+        except Exception as exc:
+            console.print(f"[red]✗[/red] IMAP connectivity: unexpected error — {exc}")
+            failed += 1
+
+        try:
+            app_password = load_app_password()
+            if app_password:
+                console.print("[green]✓[/green] App password stored")
+                passed += 1
+            else:
+                console.print("[red]✗[/red] App password missing — run [bold]otpilot setup[/bold]")
+                failed += 1
+        except Exception as exc:
+            console.print(f"[red]✗[/red] App password stored: unexpected error — {exc}")
+            failed += 1
+
+    try:
+        hotkey = get_value("hotkey", "")
+        if hotkey == "":
+            console.print("[yellow]⚠[/yellow]  Hotkey is empty — run [bold]otpilot hotkey[/bold]")
+            warnings += 1
+        else:
+            console.print(f"[green]✓[/green] Hotkey configured: {hotkey}")
+            passed += 1
+    except Exception as exc:
+        console.print(f"[red]✗[/red] Hotkey configured: unexpected error — {exc}")
+        failed += 1
+
+    try:
+        if _HOTKEY_LISTENER_AVAILABLE:
+            console.print("[green]✓[/green] Hotkey listener available")
+            passed += 1
+        else:
+            console.print(
+                "[yellow]⚠[/yellow]  Hotkey listener unavailable on this platform — OTPilot will run without hotkey support"
+            )
+            warnings += 1
+    except Exception as exc:
+        console.print(f"[red]✗[/red] Hotkey listener available: unexpected error — {exc}")
+        failed += 1
+
+    try:
+        if _TRAY_AVAILABLE:
+            console.print("[green]✓[/green] System tray available")
+            passed += 1
+        else:
+            console.print(
+                "[yellow]⚠[/yellow]  System tray unavailable — OTPilot will run headlessly without a tray icon"
+            )
+            warnings += 1
+    except Exception as exc:
+        console.print(f"[red]✗[/red] System tray available: unexpected error — {exc}")
+        failed += 1
+
+    try:
+        if not os.path.exists(PID_FILE):
+            console.print(
+                "[yellow]⚠[/yellow]  OTPilot is not running — use [bold]otpilot start[/bold]"
+            )
+            warnings += 1
+        else:
+            with open(PID_FILE, "r", encoding="utf-8") as pid_file:
+                pid_str = pid_file.read().strip()
+                pid = int(pid_str)
+            try:
+                os.kill(pid, 0)
+                console.print(f"[green]✓[/green] OTPilot is running (PID {pid})")
+                passed += 1
+            except ProcessLookupError:
+                console.print(
+                    "[yellow]⚠[/yellow]  Stale PID file found "
+                    f"(process {pid} is gone) — run [bold]otpilot stop[/bold] to clean up"
+                )
+                warnings += 1
+    except Exception as exc:
+        console.print(f"[red]✗[/red] OTPilot process running: unexpected error — {exc}")
+        failed += 1
+
+    try:
+        latest = _check_for_update()
+        if latest:
+            console.print(f"[yellow]⚠[/yellow]  Update available: v{latest} — run [bold]otpilot update[/bold]")
+            warnings += 1
+        else:
+            if (auth_mode in {"firebase", "credentials"} and gmail_reachable is False) or (
+                auth_mode == "imap" and imap_reachable is False
+            ):
+                console.print(
+                    "[dim]  Could not check for updates (no internet or PyPI unreachable)[/dim]"
+                )
+            else:
+                console.print(f"[green]✓[/green] OTPilot v{__version__} is up to date")
+                passed += 1
+    except Exception as exc:
+        console.print(f"[red]✗[/red] Update available: unexpected error — {exc}")
+        failed += 1
+
+    console.print(f"[bold]{passed} passed   {warnings} warnings   {failed} failed[/bold]")
+    if failed > 0:
+        console.print(
+            "[dim]Run [bold]otpilot setup[/bold] to fix authentication issues, or [bold]otpilot logs[/bold] for runtime errors.[/dim]"
+        )
     _print_feedback_prompt()
 
 

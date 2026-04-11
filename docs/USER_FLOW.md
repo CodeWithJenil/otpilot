@@ -163,6 +163,7 @@ While running, OTPilot lives in your system tray / menu bar:
 | Command        | Purpose                                  |
 | -------------- | ---------------------------------------- |
 | `otpilot stop` | Stop the background process and clean PID |
+| `otpilot doctor` | Run diagnostics to validate environment  |
 
 ---
 
