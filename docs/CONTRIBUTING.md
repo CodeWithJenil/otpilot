@@ -35,7 +35,7 @@ pip install -r requirements.txt
 
 ```bash
 otpilot version
-# -> OTPilot v2.3.0
+# -> OTPilot v2.3.2
 ```
 
 ---

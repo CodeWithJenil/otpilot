@@ -13,9 +13,9 @@ pip install otpilot
 **What you see:**
 ```
 Collecting otpilot
-  Downloading otpilot-2.3.0-py3-none-any.whl
+  Downloading otpilot-2.3.2-py3-none-any.whl
 Installing collected packages: otpilot
-Successfully installed otpilot-2.3.0
+Successfully installed otpilot-2.3.2
 ```
 
 > **Linux users**: Also install clipboard support:

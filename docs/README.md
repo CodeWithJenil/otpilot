@@ -61,7 +61,7 @@ otpilot setup
 ```
 
 The wizard will:
-- Open your browser for a one-time Google sign-in (read-only Gmail access)
+- Let you choose one of 3 authentication modes (Firebase, credentials.json, or IMAP App Password)
 - Let you configure hotkey, notifications, and scan preferences
 - Save everything locally
 
@@ -78,6 +78,105 @@ OTPilot runs in the background with a system tray icon when supported.
 1. Receive an OTP email
 2. Press your hotkey (default: `Ctrl+Shift+O`)
 3. Paste
+
+---
+
+## Authentication Modes
+
+OTPilot supports 3 authentication modes. Choose one during `otpilot setup`.
+
+## Setup Responsibilities (You vs End Users)
+
+Use this quick split to know what *you* (OTPilot deployer/maintainer) must set up once, versus what each *end user* must do locally.
+
+### If you provide Firebase hosted auth
+
+**You (maintainer) set up once:**
+- Build/deploy the web auth page (for example `https://jenil-otpilot.vercel.app/auth`)
+- Configure Firebase project + Google sign-in
+- Add authorized domains in Firebase Auth (`jenil-otpilot.vercel.app`, `localhost`)
+- Set web env vars (`NEXT_PUBLIC_FIREBASE_API_KEY`, `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`, `NEXT_PUBLIC_FIREBASE_PROJECT_ID`)
+- Ensure linked Google Cloud project has Gmail API enabled and consent screen configured for `gmail.readonly`
+
+**Each user sets up locally:**
+- Install OTPilot (`pip install otpilot`)
+- Run `otpilot setup`
+- Choose **[1] Firebase Auth**
+- Paste your hosted auth page URL when prompted
+- Complete Google sign-in in browser
+
+### If users bring their own OAuth client (`credentials.json`)
+
+**You (maintainer) set up:**
+- Nothing required for hosted auth
+
+**Each user sets up locally:**
+- Create their own Google Cloud project + OAuth client
+- Enable Gmail API on that project
+- Download `credentials.json` and place at `~/.otpilot/credentials.json`
+- Run `otpilot setup` and choose **[2] My own credentials.json**
+
+### If users use Gmail App Password (IMAP)
+
+**You (maintainer) set up:**
+- Nothing required for hosted auth
+
+**Each user sets up locally:**
+- Enable 2-Step Verification on Gmail account
+- Generate Gmail App Password at `https://myaccount.google.com/apppasswords`
+- Run `otpilot setup` and choose **[3] Gmail App Password**
+- Enter Gmail address + app password
+
+---
+
+### Mode 1: Firebase Auth (Recommended)
+
+Use this when you have a hosted Firebase web auth page that performs Google sign-in and redirects back to OTPilot.
+
+**You need:**
+- A Firebase web page URL that:
+  - Requests Gmail readonly scope (`https://www.googleapis.com/auth/gmail.readonly`)
+  - Retrieves `accessToken` and `refreshToken`
+  - Redirects to the provided local `redirect_uri` with query params:
+    - `access_token`
+    - `refresh_token` (if available)
+    - `expires_at` (unix timestamp, if available)
+
+**Setup flow:**
+1. Run `otpilot setup`
+2. Choose **[1] Firebase Auth**
+3. Enter your Firebase auth page URL when prompted
+4. Complete browser sign-in
+
+### Mode 2: My own `credentials.json`
+
+Use this when you want your own Google Cloud OAuth client.
+
+**You need:**
+- A Google Cloud project with Gmail API enabled
+- OAuth client credentials downloaded as `credentials.json`
+- File placed at: `~/.otpilot/credentials.json`
+
+**Setup flow:**
+1. Run `otpilot setup`
+2. Choose **[2] My own credentials.json**
+3. Confirm once `~/.otpilot/credentials.json` exists
+4. Complete browser sign-in
+
+### Mode 3: Gmail App Password (IMAP)
+
+Use this when you prefer no OAuth flow inside OTPilot.
+
+**You need:**
+- A Gmail account with 2-Step Verification enabled
+- A Gmail App Password from:
+  - https://myaccount.google.com/apppasswords
+
+**Setup flow:**
+1. Run `otpilot setup`
+2. Choose **[3] Gmail App Password**
+3. Enter your Gmail address
+4. Enter your App Password
 
 ---
 
@@ -106,6 +205,7 @@ OTPilot stores its configuration at `~/.otpilot/config.json`:
 
 ```json
 {
+  "auth_mode": "firebase",
   "hotkey": "ctrl+shift+o",
   "notify_on_copy": true,
   "otp_max_age_minutes": 10,
@@ -115,12 +215,18 @@ OTPilot stores its configuration at `~/.otpilot/config.json`:
   "auto_start_on_boot": false,
   "notification_sound": false,
   "mask_otp_in_notification": true,
-  "check_updates_on_start": true
+  "check_updates_on_start": true,
+  "setup_complete": true,
+  "firebase_web_url": "",
+  "imap_user": "",
+  "imap_host": "imap.gmail.com",
+  "imap_port": 993
 }
 ```
 
 | Field                      | Type   | Default        | Description                                       |
 | -------------------------- | ------ | -------------- | ------------------------------------------------- |
+| `auth_mode`                | string | `firebase`     | Auth backend: `firebase`, `credentials`, or `imap` |
 | `hotkey`                   | string | `ctrl+shift+o` | Global hotkey combination                         |
 | `notify_on_copy`           | bool   | `true`         | Show desktop notification when OTP is copied      |
 | `otp_max_age_minutes`      | int    | `10`           | Ignore emails older than this (minutes)           |
@@ -131,6 +237,11 @@ OTPilot stores its configuration at `~/.otpilot/config.json`:
 | `notification_sound`       | bool   | `false`        | Play a sound with notifications                   |
 | `mask_otp_in_notification` | bool   | `true`         | Mask middle digits in notification (e.g. 84••93)  |
 | `check_updates_on_start`   | bool   | `true`         | Check PyPI for a newer version on startup         |
+| `setup_complete`           | bool   | `false`        | Indicates setup has been completed                |
+| `firebase_web_url`         | string | `""`           | URL of your hosted Firebase auth page             |
+| `imap_user`                | string | `""`           | Gmail address used for IMAP mode                  |
+| `imap_host`                | string | `imap.gmail.com` | IMAP host for app-password mode                |
+| `imap_port`                | int    | `993`          | IMAP SSL port                                     |
 
 ### Files Stored Locally
 
@@ -142,6 +253,7 @@ OTPilot stores its configuration at `~/.otpilot/config.json`:
 | `~/.otpilot/otpilot.pid`   | PID of the running background process |
 | System keyring (`otpilot`) | Preferred OAuth token storage         |
 | `~/.otpilot/token.json`    | Fallback token storage                |
+| `~/.otpilot/app_password.txt` | Fallback IMAP app-password storage |
 
 ---
 
@@ -201,6 +313,7 @@ OTPilot scans the subject line and body of your recent emails for:
 | Issue                         | Solution                                                        |
 | ----------------------------- | --------------------------------------------------------------- |
 | "Not authenticated" error     | Run `otpilot setup` to re-authenticate                          |
+| "Access token expired..."     | Use Firebase/credentials mode with refresh token, or switch to IMAP App Password in setup |
 | No OTP found                  | Check `otp_max_age_minutes` — the email might be too old        |
 | Clipboard not working (Linux) | Install `xclip`: `sudo apt install xclip`                       |
 | Hotkey not working            | Run `otpilot hotkey` to reconfigure                             |

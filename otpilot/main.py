@@ -27,7 +27,7 @@ from rich.console import Console
 from otpilot import __version__
 from otpilot.clipboard import ClipboardError, copy_to_clipboard
 from otpilot.config import config_exists, get_config, token_exists
-from otpilot.gmail_client import GmailAuthError, NotAuthenticatedError, fetch_recent_emails
+from otpilot.gmail_client import GmailAuthError, NotAuthenticatedError, get_fetch_function
 from otpilot.logger import LOG_FILE, get_logger
 
 try:
@@ -131,7 +131,8 @@ def _on_hotkey_triggered() -> None:
     """
     logger.info("Hotkey trigger received.")
     try:
-        emails = fetch_recent_emails()
+        fetch_fn = get_fetch_function()
+        emails = fetch_fn()
     except NotAuthenticatedError:
         notify("OTPilot", "Please re-authenticate. Run: otpilot setup")
         logger.warning("Hotkey fetch failed: not authenticated.")

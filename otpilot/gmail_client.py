@@ -12,24 +12,30 @@ Key exports:
 """
 
 import base64
+import imaplib
 import os
 import re
+import socket
+import threading
 import time
 import uuid
 import webbrowser
 from datetime import datetime, timedelta, timezone
+from email import message_from_bytes
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from email.utils import parsedate_to_datetime
 from typing import Any, Callable, Dict, List, Optional, TypeVar
-from urllib.parse import urlencode
+from urllib.parse import parse_qs, urlencode, urlparse
 
 import requests
 from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from otpilot.config import CONFIG_DIR, get_config
 from otpilot.logger import get_logger
-from otpilot.token_store import load_token, save_token
+from otpilot.token_store import load_app_password, load_token, save_token
 
 SCOPES: list = ["https://www.googleapis.com/auth/gmail.readonly"]
 # DEFAULT_AUTH_BASE_URL = "https://otpilot-git-codex-replace-oauth-fce1ef-codewithjenils-projects.vercel.app"
@@ -140,6 +146,8 @@ def _build_credentials(token_payload: Dict[str, Any]) -> Credentials:
     expiry = None
     if expires_at:
         expiry = datetime.fromtimestamp(int(expires_at), tz=timezone.utc)
+        # Normalize to naive UTC for google-auth compatibility.
+        expiry = expiry.replace(tzinfo=None)
 
     client_id = None
     client_secret = None
@@ -186,7 +194,8 @@ def _refresh_if_expired(creds: Credentials) -> Credentials:
     Raises:
         GmailAuthError: If refresh fails or credentials have no refresh token.
     """
-    now = datetime.now(timezone.utc)
+    # Use naive UTC to match google-auth's internal comparisons.
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     expiry = getattr(creds, "expiry", None)
     is_expired = (expiry is None) or (expiry - now < timedelta(minutes=5))
 
@@ -212,7 +221,10 @@ def _refresh_if_expired(creds: Credentials) -> Credentials:
     token_payload = load_token() or {}
     token_payload["access_token"] = creds.token
     if creds.expiry:
-        token_payload["expires_at"] = int(creds.expiry.timestamp())
+        expiry = creds.expiry
+        if expiry.tzinfo is None:
+            expiry = expiry.replace(tzinfo=timezone.utc)
+        token_payload["expires_at"] = int(expiry.timestamp())
     save_token(token_payload)
 
     return creds
@@ -289,6 +301,158 @@ def run_oauth_flow(auth_base_url: str = OTPILOT_AUTH_BASE_URL) -> Credentials:
         return _build_credentials(token_data)
 
     raise GmailAuthError("Authentication timed out. Please try again.")
+
+
+def run_oauth_flow_firebase(firebase_web_url: str = "") -> Credentials:
+    """Run Firebase-hosted OAuth redirect flow and persist returned tokens.
+
+    Args:
+        firebase_web_url (str): URL of user-hosted Firebase auth page.
+
+    Returns:
+        Credentials: Google OAuth credentials built from the saved token.
+
+    Raises:
+        GmailAuthError: If the flow times out or token data is missing.
+    """
+    config = get_config()
+    if not firebase_web_url:
+        firebase_web_url = str(config.get("firebase_web_url", "")).strip()
+    if not firebase_web_url:
+        raise GmailAuthError(
+            "Firebase auth URL is not configured. Run `otpilot setup` and provide `firebase_web_url`."
+        )
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+
+    redirect_event = threading.Event()
+    token_data: Dict[str, Any] = {}
+
+    class _CallbackHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            parsed = urlparse(self.path)
+            if parsed.path != "/callback":
+                self.send_response(404)
+                self.end_headers()
+                return
+
+            query = parse_qs(parsed.query)
+            access_token = query.get("access_token", [""])[0]
+            refresh_token = query.get("refresh_token", [""])[0]
+            expires_at_raw = query.get("expires_at", [""])[0]
+
+            if access_token:
+                token_data["access_token"] = access_token
+                token_data["retrieved_at"] = int(time.time())
+                if refresh_token:
+                    token_data["refresh_token"] = refresh_token
+                if expires_at_raw:
+                    try:
+                        token_data["expires_at"] = int(expires_at_raw)
+                    except ValueError:
+                        pass
+                save_token(token_data)
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(b"Authentication successful. You can close this window.")
+                redirect_event.set()
+                return
+
+            self.send_response(400)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(b"Missing access token in callback.")
+
+        def log_message(self, format: str, *args: Any) -> None:
+            return
+
+    server = HTTPServer(("127.0.0.1", port), _CallbackHandler)
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+
+    redirect_uri = f"http://localhost:{port}/callback"
+    parsed_base = urlparse(firebase_web_url)
+    existing_query = parse_qs(parsed_base.query, keep_blank_values=True)
+    existing_query["redirect_uri"] = [redirect_uri]
+    auth_url = parsed_base._replace(query=urlencode(existing_query, doseq=True)).geturl()
+    webbrowser.open(auth_url)
+
+    try:
+        if not redirect_event.wait(timeout=180):
+            raise GmailAuthError("Authentication timed out. Please try again.")
+    finally:
+        server.shutdown()
+        server.server_close()
+        server_thread.join(timeout=2)
+
+    saved_payload = load_token()
+    if not saved_payload:
+        raise GmailAuthError("Authentication failed. No token was saved from Firebase redirect.")
+    return _build_credentials(saved_payload)
+
+
+def run_oauth_flow_credentials() -> Credentials:
+    """Run Google Installed App OAuth flow using local credentials.json.
+
+    Returns:
+        Credentials: Google OAuth credentials built from authorized user data.
+
+    Raises:
+        GmailAuthError: If credentials.json is missing or OAuth flow fails.
+    """
+    creds_path = CONFIG_DIR / "credentials.json"
+    if not creds_path.exists():
+        raise GmailAuthError(
+            "Missing credentials file at ~/.otpilot/credentials.json. "
+            "Download it from Google Cloud Console and run setup again."
+        )
+
+    try:
+        flow = InstalledAppFlow.from_client_secrets_file(str(creds_path), scopes=SCOPES)
+        creds = flow.run_local_server(port=0)
+    except Exception as exc:
+        raise GmailAuthError(f"OAuth flow failed: {exc}") from exc
+
+    token_data: Dict[str, Any] = {
+        "access_token": creds.token,
+        "retrieved_at": int(time.time()),
+    }
+    if creds.refresh_token:
+        token_data["refresh_token"] = creds.refresh_token
+    if creds.expiry:
+        expiry = creds.expiry
+        if expiry.tzinfo is None:
+            expiry = expiry.replace(tzinfo=timezone.utc)
+        token_data["expires_at"] = int(expiry.timestamp())
+    save_token(token_data)
+    return creds
+
+
+def run_oauth_flow_for_mode(mode: str, **kwargs: Any) -> Optional[Credentials]:
+    """Run the configured auth flow implementation for the selected mode.
+
+    Args:
+        mode (str): Authentication mode value from configuration.
+        **kwargs (Any): Optional parameters forwarded to flow functions.
+
+    Returns:
+        Optional[Credentials]: Credentials for OAuth modes, or ``None`` for IMAP mode.
+
+    Raises:
+        GmailAuthError: If mode is unsupported or flow fails.
+    """
+    normalized = (mode or "").strip().lower()
+    if normalized == "firebase":
+        firebase_web_url = str(kwargs.get("firebase_web_url", ""))
+        return run_oauth_flow_firebase(firebase_web_url=firebase_web_url)
+    if normalized == "credentials":
+        return run_oauth_flow_credentials()
+    if normalized == "imap":
+        return None
+    raise GmailAuthError(f"Unsupported auth mode: {mode}")
 
 
 def _decode_body(payload: Dict[str, Any]) -> str:
@@ -496,3 +660,141 @@ def fetch_recent_emails(n: Optional[int] = None) -> List[Dict[str, Any]]:
     except Exception:
         logger.exception("Failed to fetch recent emails.")
         raise
+
+
+def fetch_recent_emails_imap(n: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Fetch recent inbox emails via IMAP formatted for OTP extraction.
+
+    Args:
+        n (Optional[int]): Maximum number of messages to fetch. When ``None``,
+            the value from configuration ``email_fetch_count`` is used.
+
+    Returns:
+        List[Dict[str, Any]]: List of normalized email dictionaries containing
+            ``subject``, ``body``, ``timestamp``, and ``sender`` keys.
+
+    Raises:
+        NotAuthenticatedError: If no App Password is available for IMAP login.
+        GmailAuthError: If IMAP login or fetch operations fail.
+    """
+    config = get_config()
+    if n is None:
+        n = config.get("email_fetch_count", 10)
+
+    max_age_minutes: int = config.get("otp_max_age_minutes", 10)
+    imap_user = str(config.get("imap_user", "")).strip()
+    imap_host = str(config.get("imap_host", "imap.gmail.com")).strip()
+    imap_port = int(config.get("imap_port", 993))
+    app_password = load_app_password()
+    if not app_password:
+        raise NotAuthenticatedError("No Gmail App Password found. Run `otpilot setup` to configure IMAP auth.")
+
+    mail: Optional[imaplib.IMAP4_SSL] = None
+    logger.debug("Fetching recent emails via IMAP (limit=%s).", n)
+    try:
+        mail = imaplib.IMAP4_SSL(imap_host, imap_port)
+        mail.login(imap_user, app_password)
+        mail.select("INBOX")
+        status, data = mail.search(None, "ALL")
+        if status != "OK" or not data:
+            return []
+
+        ids = data[0].split()
+        recent_ids = ids[-n:]
+        now = datetime.now(timezone.utc)
+        emails: List[Dict[str, Any]] = []
+
+        for msg_id in reversed(recent_ids):
+            fetch_status, fetch_data = mail.fetch(msg_id, "(RFC822)")
+            if fetch_status != "OK" or not fetch_data:
+                continue
+
+            raw_bytes = b""
+            for part in fetch_data:
+                if isinstance(part, tuple) and len(part) >= 2 and isinstance(part[1], bytes):
+                    raw_bytes = part[1]
+                    break
+            if not raw_bytes:
+                continue
+
+            msg = message_from_bytes(raw_bytes)
+            subject = str(msg.get("Subject", ""))
+            sender = str(msg.get("From", ""))
+
+            timestamp = None
+            date_header = msg.get("Date")
+            if date_header:
+                try:
+                    timestamp = parsedate_to_datetime(date_header)
+                    if timestamp and timestamp.tzinfo is None:
+                        timestamp = timestamp.replace(tzinfo=timezone.utc)
+                except Exception:
+                    timestamp = None
+
+            if timestamp:
+                age_minutes = (now - timestamp).total_seconds() / 60
+                if age_minutes > max_age_minutes:
+                    continue
+
+            body_parts: List[str] = []
+            if msg.is_multipart():
+                for part in msg.walk():
+                    if part.get_content_type() != "text/plain":
+                        continue
+                    if part.get_content_disposition() == "attachment":
+                        continue
+                    payload = part.get_payload(decode=True)
+                    if not payload:
+                        continue
+                    charset = part.get_content_charset() or "utf-8"
+                    try:
+                        body_parts.append(payload.decode(charset, errors="replace"))
+                    except Exception:
+                        body_parts.append(payload.decode("utf-8", errors="replace"))
+            else:
+                payload = msg.get_payload(decode=True)
+                if payload:
+                    charset = msg.get_content_charset() or "utf-8"
+                    try:
+                        body_parts.append(payload.decode(charset, errors="replace"))
+                    except Exception:
+                        body_parts.append(payload.decode("utf-8", errors="replace"))
+
+            body = _strip_html("\n".join(body_parts).strip())
+            emails.append(
+                {
+                    "subject": subject,
+                    "body": body,
+                    "timestamp": timestamp.isoformat() if timestamp else "",
+                    "sender": sender,
+                }
+            )
+
+        return emails
+    except NotAuthenticatedError:
+        raise
+    except Exception as exc:
+        logger.exception("Failed to fetch recent emails via IMAP.")
+        raise GmailAuthError(f"IMAP fetch failed: {exc}") from exc
+    finally:
+        if mail is not None:
+            try:
+                mail.close()
+            except Exception:
+                pass
+            try:
+                mail.logout()
+            except Exception:
+                pass
+
+
+def get_fetch_function() -> Callable[..., List[Dict[str, Any]]]:
+    """Select the active email fetch implementation based on auth mode.
+
+    Returns:
+        Callable[..., List[Dict[str, Any]]]: Fetch function for current auth mode.
+    """
+    mode = str(get_config().get("auth_mode", "firebase")).strip().lower()
+    if mode == "imap":
+        return fetch_recent_emails_imap
+    return fetch_recent_emails
