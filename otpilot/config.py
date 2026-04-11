@@ -25,6 +25,7 @@ TOKEN_FILE: Path = CONFIG_DIR / "token.json"
 # Default configuration values used for first run and missing keys.
 DEFAULT_CONFIG: Dict[str, Any] = {
     "auth_mode": "firebase",
+    "firebase_web_url": "https://jenil-otpilot.vercel.app/auth",
     "hotkey": "ctrl+shift+o",
     "notify_on_copy": True,
     "otp_max_age_minutes": 10,
